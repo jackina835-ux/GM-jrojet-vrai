@@ -3,12 +3,19 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
+// DB_SSL=true active la connexion chiffree (necessaire pour Aiven et la
+// plupart des bases MySQL hebergees en ligne, qui l'exigent). En local
+// (MySQL sur ton PC), on ne met pas cette variable et la connexion reste
+// simple, comme avant.
+const useSSL = process.env.DB_SSL === 'true';
+
 const sequelize = new Sequelize(
   process.env.DB_NAME,
   process.env.DB_USER,
   process.env.DB_PASSWORD,
   {
     host: process.env.DB_HOST,
+    port: process.env.DB_PORT || 3306,
     dialect: 'mysql',
     logging: console.log,
     define: {
@@ -20,7 +27,15 @@ const sequelize = new Sequelize(
       min: 0,
       acquire: 30000,
       idle: 10000
-    }
+    },
+    dialectOptions: useSSL
+      ? {
+          ssl: {
+            require: true,
+            rejectUnauthorized: false,
+          },
+        }
+      : {},
   }
 );
 
