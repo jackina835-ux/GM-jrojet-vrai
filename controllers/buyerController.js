@@ -259,7 +259,7 @@ exports.getFavorites = async (req, res) => {
         {
           model: Store,
           include: [
-            { model: Department, attributes: ['id', 'name'] }
+            { model: Department, as: 'department', attributes: ['id', 'name'] }
           ]
         }
       ]

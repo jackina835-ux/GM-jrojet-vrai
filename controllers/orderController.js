@@ -1,4 +1,4 @@
-const { Order, OrderItem, Buyer, Store, Stock, User } = require('../models');
+const { Order, OrderItem, Buyer, Store, Stock, User, Vendor } = require('../models');
 const { Op } = require('sequelize');
 
 exports.createOrder = async (req, res) => {
@@ -105,8 +105,11 @@ exports.getBuyerOrders = async (req, res) => {
         {
           model: Store,
           include: [
-            { model: User, attributes: ['name', 'avatar'] }
-          ]
+            {
+              model: Vendor,
+              include: [{ model: User, attributes: ['name', 'avatar'] }],
+            },
+          ],
         },
         {
           model: OrderItem
@@ -376,8 +379,11 @@ exports.getOrderDetails = async (req, res) => {
         {
           model: Store,
           include: [
-            { model: User, attributes: ['name', 'avatar'] }
-          ]
+            {
+              model: Vendor,
+              include: [{ model: User, attributes: ['name', 'avatar'] }],
+            },
+          ],
         },
         {
           model: OrderItem

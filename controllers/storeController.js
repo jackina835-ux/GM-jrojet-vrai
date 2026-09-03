@@ -6,7 +6,7 @@ exports.getAllStores = async (req, res) => {
     const stores = await Store.findAll({
       where: { is_active: true },
       include: [
-        { model: Department, attributes: ['id', 'name', 'icon'] },
+        { model: Department, as: 'department', attributes: ['id', 'name', 'icon'] },
         { 
           model: Vendor,
           include: [
@@ -36,7 +36,7 @@ exports.getStoreById = async (req, res) => {
     
     const store = await Store.findByPk(storeId, {
       include: [
-        { model: Department, attributes: ['id', 'name', 'icon'] },
+        { model: Department, as: 'department', attributes: ['id', 'name', 'icon'] },
         { 
           model: Vendor,
           include: [
@@ -81,7 +81,7 @@ exports.getVendorStore = async (req, res) => {
     const store = await Store.findOne({
       where: { vendor_id: vendorId },
       include: [
-        { model: Department, attributes: ['id', 'name', 'icon'] }
+        { model: Department, as: 'department', attributes: ['id', 'name', 'icon'] }
       ]
     });
 
@@ -285,7 +285,7 @@ exports.getFollowedStores = async (req, res) => {
         {
           model: Store,
           include: [
-            { model: Department, attributes: ['id', 'name', 'icon'] }
+            { model: Department, as: 'department', attributes: ['id', 'name', 'icon'] }
           ]
         }
       ]
@@ -319,7 +319,7 @@ exports.searchStores = async (req, res) => {
         ]
       },
       include: [
-        { model: Department, attributes: ['id', 'name', 'icon'] }
+        { model: Department, as: 'department', attributes: ['id', 'name', 'icon'] }
       ],
       limit: 20
     });
@@ -347,7 +347,7 @@ exports.getStoresByDepartment = async (req, res) => {
         is_active: true
       },
       include: [
-        { model: Department, attributes: ['id', 'name', 'icon'] }
+        { model: Department, as: 'department', attributes: ['id', 'name', 'icon'] }
       ]
     });
 

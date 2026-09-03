@@ -13,7 +13,7 @@ exports.getProfile = async (req, res) => {
         {
           model: Store,
           include: [
-            { model: Department, attributes: ['id', 'name'] }
+            { model: Department, as: 'department', attributes: ['id', 'name'] }
           ]
         }
       ]
@@ -89,7 +89,7 @@ exports.getStore = async (req, res) => {
     const store = await Store.findOne({
       where: { vendor_id: vendor.id },
       include: [
-        { model: Department, attributes: ['id', 'name', 'icon'] }
+        { model: Department, as: 'department', attributes: ['id', 'name', 'icon'] }
       ]
     });
 

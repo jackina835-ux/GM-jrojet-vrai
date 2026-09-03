@@ -215,7 +215,7 @@ exports.getStoreStats = async (req, res) => {
 
     const store = await Store.findByPk(storeId, {
       include: [
-        { model: Department, attributes: ['name'] },
+        { model: Department, as: 'department', attributes: ['name'] },
         { model: Vendor, include: [{ model: User, attributes: ['name'] }] }
       ]
     });

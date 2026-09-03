@@ -1,4 +1,4 @@
-const { Publication, Store, User } = require('../models');
+const { Publication, Store, User, Vendor } = require('../models');
 const { Op } = require('sequelize');
 const moment = require('moment');
 const fs = require('fs');
@@ -152,8 +152,11 @@ exports.getGlobalPublications = async (req, res) => {
         {
           model: Store,
           include: [
-            { model: User, attributes: ['id', 'name', 'avatar'] }
-          ]
+            {
+              model: Vendor,
+              include: [{ model: User, attributes: ['id', 'name', 'avatar'] }],
+            },
+          ],
         }
       ],
       order: [['created_at', 'DESC']],
@@ -355,8 +358,11 @@ exports.searchPublications = async (req, res) => {
         {
           model: Store,
           include: [
-            { model: User, attributes: ['id', 'name', 'avatar'] }
-          ]
+            {
+              model: Vendor,
+              include: [{ model: User, attributes: ['id', 'name', 'avatar'] }],
+            },
+          ],
         }
       ],
       order: [['created_at', 'DESC']]
