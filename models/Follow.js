@@ -25,6 +25,7 @@ const Follow = sequelize.define('Follow', {
   },
 }, {
   tableName: 'follows',
+  updatedAt: false, // la table follows n'a pas de colonne updated_at
 });
 
 module.exports = Follow;
