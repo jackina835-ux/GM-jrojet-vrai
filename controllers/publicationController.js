@@ -1,4 +1,4 @@
-const { Publication, Store, User, Vendor } = require('../models');
+const { Publication, Store, User, Vendor, Buyer, Follow } = require('../models');
 const { Op } = require('sequelize');
 const moment = require('moment');
 const fs = require('fs');
@@ -382,6 +382,66 @@ exports.searchPublications = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la recherche'
+    });
+  }
+};
+
+// === RÉCUPÉRER LES PUBLICATIONS DES MAGASINS SUIVIS PAR L'ACHETEUR CONNECTÉ ===
+//
+// Cette route n'existait pas du tout auparavant (ni la route, ni la
+// fonction) : le frontend l'appelait deja (GET /publications/followed)
+// mais recevait systematiquement une erreur 404.
+exports.getFollowedPublications = async (req, res) => {
+  try {
+    const buyer = await Buyer.findOne({ where: { user_id: req.user.id } });
+    if (!buyer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Acheteur non trouvé'
+      });
+    }
+
+    const follows = await Follow.findAll({ where: { buyer_id: buyer.id } });
+    const storeIds = follows.map((f) => f.store_id);
+
+    if (storeIds.length === 0) {
+      return res.json({ success: true, publications: [] });
+    }
+
+    const publications = await Publication.findAll({
+      where: {
+        store_id: storeIds,
+        is_active: true,
+        is_draft: false
+      },
+      include: [
+        {
+          model: Store,
+          include: [
+            {
+              model: Vendor,
+              include: [{ model: User, attributes: ['id', 'name', 'avatar'] }],
+            },
+          ],
+        }
+      ],
+      order: [['created_at', 'DESC']]
+    });
+
+    const formattedPublications = publications.map(pub => ({
+      ...pub.toJSON(),
+      photo: pub.photo ? `/uploads/${pub.photo.split('/').pop()}` : null
+    }));
+
+    res.json({
+      success: true,
+      publications: formattedPublications
+    });
+  } catch (error) {
+    console.error('Get followed publications error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la récupération des publications suivies'
     });
   }
 };

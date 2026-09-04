@@ -32,4 +32,7 @@ router.get('/global', publicationController.getGlobalPublications);
 router.get('/store/:storeId', publicationController.getStorePublications);
 router.get('/search', publicationController.searchPublications);
 
+// Route protégée : publications des magasins suivis par l'acheteur connecté
+router.get('/followed', authMiddleware, publicationController.getFollowedPublications);
+
 module.exports = router;
