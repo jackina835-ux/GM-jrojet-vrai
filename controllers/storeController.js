@@ -109,7 +109,7 @@ exports.updateStore = async (req, res) => {
   try {
     const { storeId } = req.params;
     const { name, description, contact } = req.body;
-    const logo = req.file ? req.file.path : null;
+    const logo = req.file ? '/' + req.file.path.replace(/\\/g, '/') : null;
 
     const store = await Store.findByPk(storeId);
     if (!store) {

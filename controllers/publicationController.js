@@ -21,8 +21,9 @@ exports.createPublication = async (req, res) => {
       });
     }
 
-    // Récupérer le chemin de la photo
-    const photoPath = req.file.path.replace(/\\/g, '/');
+    // Récupérer le chemin de la photo (avec un / en tête, pour former une
+    // URL publique correcte via /uploads/... une fois relue plus tard)
+    const photoPath = '/' + req.file.path.replace(/\\/g, '/');
     console.log('📸 Photo sauvegardée:', photoPath);
 
     // Calculer la date d'expiration
@@ -99,7 +100,7 @@ exports.updatePublication = async (req, res) => {
           console.error('Erreur suppression ancienne photo:', err);
         }
       }
-      updates.photo = req.file.path.replace(/\\/g, '/');
+      updates.photo = '/' + req.file.path.replace(/\\/g, '/');
     }
 
     // Mettre à jour la date d'expiration
@@ -166,7 +167,7 @@ exports.getGlobalPublications = async (req, res) => {
     // Formater les URLs des photos
     const formattedPublications = publications.map(pub => ({
       ...pub.toJSON(),
-      photo: pub.photo ? `/uploads/${pub.photo.split('/').pop()}` : null
+      photo: pub.photo || null
     }));
 
     res.json({
@@ -202,7 +203,7 @@ exports.getStorePublications = async (req, res) => {
 
     const formattedPublications = publications.map(pub => ({
       ...pub.toJSON(),
-      photo: pub.photo ? `/uploads/${pub.photo.split('/').pop()}` : null
+      photo: pub.photo || null
     }));
 
     res.json({
@@ -282,7 +283,7 @@ exports.getDrafts = async (req, res) => {
 
     const formattedDrafts = drafts.map(draft => ({
       ...draft.toJSON(),
-      photo: draft.photo ? `/uploads/${draft.photo.split('/').pop()}` : null
+      photo: draft.photo || null
     }));
 
     res.json({
@@ -370,7 +371,7 @@ exports.searchPublications = async (req, res) => {
 
     const formattedPublications = publications.map(pub => ({
       ...pub.toJSON(),
-      photo: pub.photo ? `/uploads/${pub.photo.split('/').pop()}` : null
+      photo: pub.photo || null
     }));
 
     res.json({
@@ -430,7 +431,7 @@ exports.getFollowedPublications = async (req, res) => {
 
     const formattedPublications = publications.map(pub => ({
       ...pub.toJSON(),
-      photo: pub.photo ? `/uploads/${pub.photo.split('/').pop()}` : null
+      photo: pub.photo || null
     }));
 
     res.json({
