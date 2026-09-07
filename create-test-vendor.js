@@ -11,7 +11,7 @@
 require('dotenv').config();
 const { User, Vendor } = require('./models');
 
-const TEST_EMAIL = 'vendeur.test@grandmarche.mg';
+const TEST_EMAIL = 'vendeur.test2@grandmarche.mg';
 const TEST_PASSWORD = 'test1234';
 
 async function main() {
@@ -25,16 +25,16 @@ async function main() {
   const user = await User.create({
     email: TEST_EMAIL,
     password: TEST_PASSWORD, // hashe automatiquement par le modele User
-    name: 'Vendeur Test',
+    name: 'Vendeur Test 2',
     role: 'vendor',
   });
 
   await Vendor.create({
     user_id: user.id,
-    cin: '000000000000',
+    cin: '000000000001',
     first_name: 'Vendeur',
-    last_name: 'Test',
-    contact: '0340000000',
+    last_name: 'Test2',
+    contact: '0340000001',
     droit_bail: null, // volontairement absent, comme prevu
     is_paid: true,
     is_verified: true,
