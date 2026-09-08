@@ -5,11 +5,11 @@ const authMiddleware = require('../middlewares/authMiddleware');
 // ✅ IMPORT CORRECT
 const { upload, handleUploadError } = require('../middlewares/uploadMiddleware');
 
-// ✅ CORRIGÉ
+// ✅ CORRIGÉ (plusieurs photos possibles : jusqu'à 5, champ "photos")
 router.post(
   '/', 
   authMiddleware, 
-  upload.single('photo'), 
+  upload.array('photos', 5), 
   handleUploadError,
   publicationController.createPublication
 );
@@ -18,7 +18,7 @@ router.post(
 router.put(
   '/:id', 
   authMiddleware, 
-  upload.single('photo'), 
+  upload.array('photos', 5), 
   handleUploadError,
   publicationController.updatePublication
 );

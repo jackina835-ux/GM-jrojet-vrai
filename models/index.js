@@ -7,6 +7,7 @@ const Department = require('./Department');
 const Store = require('./Store');
 const Stock = require('./Stock');
 const Publication = require('./Publication');
+const PublicationPhoto = require('./PublicationPhoto');
 const Order = require('./Order');
 const OrderItem = require('./OrderItem');
 const Sale = require('./Sale');
@@ -33,6 +34,9 @@ Stock.belongsTo(Store, { foreignKey: 'store_id' });
 
 Store.hasMany(Publication, { foreignKey: 'store_id' });
 Publication.belongsTo(Store, { foreignKey: 'store_id' });
+
+Publication.hasMany(PublicationPhoto, { foreignKey: 'publication_id' });
+PublicationPhoto.belongsTo(Publication, { foreignKey: 'publication_id' });
 
 Store.hasMany(Sale, { foreignKey: 'store_id' });
 Sale.belongsTo(Store, { foreignKey: 'store_id' });
@@ -67,6 +71,7 @@ module.exports = {
     Store,
     Stock,
     Publication,
+    PublicationPhoto,
     Order,
     OrderItem,
     Sale,
