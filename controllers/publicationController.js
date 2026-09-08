@@ -1,4 +1,4 @@
-const { Publication, Store, User, Vendor, Buyer, Follow } = require('../models');
+const { Publication, PublicationPhoto, Store, User, Vendor, Buyer, Follow } = require('../models');
 const { Op } = require('sequelize');
 const moment = require('moment');
 const fs = require('fs');
@@ -8,23 +8,27 @@ exports.createPublication = async (req, res) => {
   try {
     console.log('📝 Création d\'une publication...');
     console.log('Body:', req.body);
-    console.log('File:', req.file);
+    console.log('Files:', req.files);
 
-    const { storeId, legend, duration, isPermanent } = req.body;
+    const { storeId, legend, duration, isPermanent, price, category } = req.body;
     
-    // Vérifier la photo
-    if (!req.file) {
+    // Vérifier les photos (upload.array -> req.files, plusieurs possibles)
+    if (!req.files || req.files.length === 0) {
       console.log('❌ Aucun fichier reçu');
       return res.status(400).json({
         success: false,
-        message: 'La photo est requise'
+        message: 'Au moins une photo est requise'
       });
     }
 
-    // Récupérer le chemin de la photo (avec un / en tête, pour former une
-    // URL publique correcte via /uploads/... une fois relue plus tard)
-    const photoPath = '/' + req.file.path.replace(/\\/g, '/');
-    console.log('📸 Photo sauvegardée:', photoPath);
+    // Chaque chemin recupere avec un / en tete, pour former une URL
+    // publique correcte via /uploads/... une fois relu plus tard.
+    const photoPaths = req.files.map((f) => '/' + f.path.replace(/\\/g, '/'));
+    console.log('📸 Photos sauvegardées:', photoPaths);
+
+    // La premiere photo reste la "couverture" (compatibilite avec le
+    // reste de l'app qui n'affiche qu'une seule image par publication).
+    const photoPath = photoPaths[0];
 
     // Calculer la date d'expiration
     let expiresAt = null;
@@ -38,12 +42,24 @@ exports.createPublication = async (req, res) => {
       store_id: parseInt(storeId),
       legend: legend || '',
       photo: photoPath,
+      price: price ? parseFloat(price) : null,
+      category: category || null,
       duration: parseInt(duration) || 4,
       is_permanent: isPermanent === 'true' || isPermanent === true,
       expires_at: expiresAt,
       is_active: true,
       is_draft: false
     });
+
+    // Enregistrer toutes les photos (y compris la premiere) dans la
+    // galerie de la publication, pour l'affichage multi-photos.
+    await PublicationPhoto.bulkCreate(
+      photoPaths.map((photo, index) => ({
+        publication_id: publication.id,
+        photo,
+        position: index,
+      }))
+    );
 
     console.log('✅ Publication créée:', publication.id);
 
@@ -53,13 +69,15 @@ exports.createPublication = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Create publication error:', error);
-    // Supprimer le fichier uploadé en cas d'erreur
-    if (req.file) {
-      try {
-        fs.unlinkSync(req.file.path);
-      } catch (err) {
-        console.error('Erreur suppression fichier:', err);
-      }
+    // Supprimer les fichiers uploadés en cas d'erreur
+    if (req.files) {
+      req.files.forEach((f) => {
+        try {
+          fs.unlinkSync(f.path);
+        } catch (err) {
+          console.error('Erreur suppression fichier:', err);
+        }
+      });
     }
     res.status(500).json({
       success: false,
@@ -73,7 +91,7 @@ exports.createPublication = async (req, res) => {
 exports.updatePublication = async (req, res) => {
   try {
     const { id } = req.params;
-    const { legend, duration, isPermanent } = req.body;
+    const { legend, duration, isPermanent, price, category } = req.body;
 
     const publication = await Publication.findByPk(id);
     if (!publication) {
@@ -86,21 +104,35 @@ exports.updatePublication = async (req, res) => {
     const updates = {};
     if (legend) updates.legend = legend;
     if (duration) updates.duration = parseInt(duration);
+    if (price !== undefined) updates.price = price ? parseFloat(price) : null;
+    if (category !== undefined) updates.category = category || null;
     if (isPermanent !== undefined) {
       updates.is_permanent = isPermanent === 'true' || isPermanent === true;
     }
 
-    // Gérer la nouvelle photo si fournie
-    if (req.file) {
-      // Supprimer l'ancienne photo
-      if (publication.photo) {
+    // Gérer les nouvelles photos si fournies (remplace toute la galerie)
+    if (req.files && req.files.length > 0) {
+      // Supprimer les anciennes photos (fichiers + lignes de galerie)
+      const oldPhotos = await PublicationPhoto.findAll({ where: { publication_id: id } });
+      oldPhotos.forEach((p) => {
         try {
-          fs.unlinkSync(publication.photo);
+          fs.unlinkSync('.' + p.photo);
         } catch (err) {
           console.error('Erreur suppression ancienne photo:', err);
         }
-      }
-      updates.photo = '/' + req.file.path.replace(/\\/g, '/');
+      });
+      await PublicationPhoto.destroy({ where: { publication_id: id } });
+
+      const photoPaths = req.files.map((f) => '/' + f.path.replace(/\\/g, '/'));
+      updates.photo = photoPaths[0];
+
+      await PublicationPhoto.bulkCreate(
+        photoPaths.map((photo, index) => ({
+          publication_id: id,
+          photo,
+          position: index,
+        }))
+      );
     }
 
     // Mettre à jour la date d'expiration
@@ -158,6 +190,11 @@ exports.getGlobalPublications = async (req, res) => {
               include: [{ model: User, attributes: ['id', 'name', 'avatar'] }],
             },
           ],
+        },
+        {
+          model: PublicationPhoto,
+          separate: true,
+          order: [['position', 'ASC']],
         }
       ],
       order: [['created_at', 'DESC']],
@@ -167,7 +204,8 @@ exports.getGlobalPublications = async (req, res) => {
     // Formater les URLs des photos
     const formattedPublications = publications.map(pub => ({
       ...pub.toJSON(),
-      photo: pub.photo || null
+      photo: pub.photo || null,
+      photos: (pub.PublicationPhotos || []).map((p) => p.photo)
     }));
 
     res.json({
@@ -198,12 +236,20 @@ exports.getStorePublications = async (req, res) => {
           { expires_at: { [Op.gt]: moment().toDate() } }
         ]
       },
+      include: [
+        {
+          model: PublicationPhoto,
+          separate: true,
+          order: [['position', 'ASC']],
+        }
+      ],
       order: [['created_at', 'DESC']]
     });
 
     const formattedPublications = publications.map(pub => ({
       ...pub.toJSON(),
-      photo: pub.photo || null
+      photo: pub.photo || null,
+      photos: (pub.PublicationPhotos || []).map((p) => p.photo)
     }));
 
     res.json({
@@ -232,14 +278,26 @@ exports.deletePublication = async (req, res) => {
       });
     }
 
-    // Supprimer la photo
+    // Supprimer la photo de couverture (le chemin stocké commence par un
+    // "/" pour former une URL publique, donc il faut re-ajouter un "."
+    // devant pour retrouver le vrai chemin de fichier local)
     if (publication.photo) {
       try {
-        fs.unlinkSync(publication.photo);
+        fs.unlinkSync('.' + publication.photo);
       } catch (err) {
         console.error('Erreur suppression photo:', err);
       }
     }
+
+    // Supprimer aussi toutes les photos de la galerie
+    const galleryPhotos = await PublicationPhoto.findAll({ where: { publication_id: id } });
+    galleryPhotos.forEach((p) => {
+      try {
+        fs.unlinkSync('.' + p.photo);
+      } catch (err) {
+        console.error('Erreur suppression photo galerie:', err);
+      }
+    });
 
     await publication.destroy();
 
@@ -364,6 +422,11 @@ exports.searchPublications = async (req, res) => {
               include: [{ model: User, attributes: ['id', 'name', 'avatar'] }],
             },
           ],
+        },
+        {
+          model: PublicationPhoto,
+          separate: true,
+          order: [['position', 'ASC']],
         }
       ],
       order: [['created_at', 'DESC']]
@@ -371,7 +434,8 @@ exports.searchPublications = async (req, res) => {
 
     const formattedPublications = publications.map(pub => ({
       ...pub.toJSON(),
-      photo: pub.photo || null
+      photo: pub.photo || null,
+      photos: (pub.PublicationPhotos || []).map((p) => p.photo)
     }));
 
     res.json({
@@ -424,6 +488,11 @@ exports.getFollowedPublications = async (req, res) => {
               include: [{ model: User, attributes: ['id', 'name', 'avatar'] }],
             },
           ],
+        },
+        {
+          model: PublicationPhoto,
+          separate: true,
+          order: [['position', 'ASC']],
         }
       ],
       order: [['created_at', 'DESC']]
@@ -431,7 +500,8 @@ exports.getFollowedPublications = async (req, res) => {
 
     const formattedPublications = publications.map(pub => ({
       ...pub.toJSON(),
-      photo: pub.photo || null
+      photo: pub.photo || null,
+      photos: (pub.PublicationPhotos || []).map((p) => p.photo)
     }));
 
     res.json({

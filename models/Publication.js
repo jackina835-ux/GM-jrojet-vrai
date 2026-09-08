@@ -27,6 +27,10 @@ const Publication = sequelize.define('Publication', {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: true,
   },
+  category: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
   duration: {
     type: DataTypes.INTEGER,
     defaultValue: 4,
