@@ -22,11 +22,11 @@ async function main() {
     );
   `);
 
-  console.log('🎉 Table "publication_photos" créée (ou déjà existante) avec succès !');
+  console.log('Table "publication_photos" creee (ou deja existante) avec succes.');
   process.exit(0);
 }
 
 main().catch((err) => {
-  console.error('❌ Erreur :', err.message);
+  console.error('Erreur :', err.message);
   process.exit(1);
 });

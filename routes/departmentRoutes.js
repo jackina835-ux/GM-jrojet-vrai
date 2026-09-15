@@ -7,15 +7,18 @@ const roleMiddleware = require('../middlewares/roleMiddleware');
 const { upload, handleUploadError } = require('../middlewares/uploadMiddleware');
 
 // Routes publiques
+// Chemins fixes AVANT les routes parametrees (/:departmentId), sinon
+// Express interprete "search"/"active" comme une valeur de departmentId.
 router.get('/active', departmentController.getActiveDepartments);
+router.get('/search', departmentController.searchDepartments);
+
+// Routes vendeur (chemin fixe /available, doit aussi precéder /:departmentId)
+router.get('/available', authMiddleware, roleMiddleware(['vendor']), departmentController.getAvailableDepartments);
+
 router.get('/', departmentController.getAllDepartments);
 router.get('/:departmentId', departmentController.getDepartmentById);
 router.get('/:departmentId/stores', departmentController.getDepartmentStores);
 router.get('/:departmentId/active', departmentController.checkDepartmentActive);
-router.get('/search', departmentController.searchDepartments);
-
-// Routes vendeur
-router.get('/available', authMiddleware, roleMiddleware(['vendor']), departmentController.getAvailableDepartments);
 
 // ✅ CORRIGÉ
 router.post(

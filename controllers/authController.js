@@ -45,7 +45,6 @@ const buildUserPayload = async (user) => {
       const store = await Store.findOne({ where: { vendor_id: vendor.id } });
       base.vendor = {
         id: vendor.id,
-        cin: vendor.cin,
         firstName: vendor.first_name,
         lastName: vendor.last_name,
         contact: vendor.contact,
@@ -119,6 +118,12 @@ exports.registerBuyer = async (req, res) => {
 };
 
 // ✅ INSCRIPTION VENDEUR
+//
+// Inscription GRATUITE (plus de paiement, plus de numéro de CIN demandé).
+// Le document "droit de bail" reste, lui, une condition OBLIGATOIRE — mais
+// aucun écran ne permet encore de le fournir, donc l'inscription vendeur
+// échoue volontairement à cette étape pour l'instant. C'est un choix
+// assumé (fonctionnalité à activer plus tard), pas un bug à corriger.
 exports.registerVendor = async (req, res) => {
   try {
     console.log('📝 Inscription vendeur...');
@@ -129,13 +134,19 @@ exports.registerVendor = async (req, res) => {
       email,
       password,
       name,
-      cin,
       firstName,
       lastName,
       contact,
       googleId,
       avatar
     } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email et mot de passe requis'
+      });
+    }
 
     // Vérifier si l'utilisateur existe
     const existingUser = await User.findOne({ where: { email } });
@@ -146,17 +157,10 @@ exports.registerVendor = async (req, res) => {
       });
     }
 
-    // Vérifier si le CIN existe
-    const existingVendor = await Vendor.findOne({ where: { cin } });
-    if (existingVendor) {
-      return res.status(400).json({
-        success: false,
-        message: 'Ce CIN est déjà enregistré'
-      });
-    }
-
-    // Récupérer le droit de bail
-    const droitBail = req.file ? req.file.path : null;
+    // Le droit de bail reste obligatoire et volontairement bloqué : aucun
+    // écran ne permet encore de le fournir, donc cette vérification arrête
+    // systématiquement l'inscription à ce stade, par choix assumé.
+    const droitBail = req.file ? '/' + req.file.path.replace(/\\/g, '/') : null;
     if (!droitBail) {
       return res.status(400).json({
         success: false,
@@ -168,50 +172,34 @@ exports.registerVendor = async (req, res) => {
     const user = await User.create({
       email,
       password: password || 'google_oauth',
-      name: name || `${firstName} ${lastName}`,
+      name: name || `${firstName || ''} ${lastName || ''}`.trim() || email.split('@')[0],
       avatar: avatar || null,
       role: 'vendor',
       google_id: googleId || null,
       is_active: true
     });
 
-    // Créer le profil vendeur
-    const vendor = await Vendor.create({
+    // Créer le profil vendeur — gratuit dès le départ : pas de paiement,
+    // pas de vérification manuelle requise pour démarrer.
+    await Vendor.create({
       user_id: user.id,
-      cin,
-      first_name: firstName,
-      last_name: lastName,
-      contact,
+      first_name: firstName || '',
+      last_name: lastName || '',
+      contact: contact || '',
       droit_bail: droitBail,
-      is_paid: false,
-      is_verified: false,
-      status: 'pending'
+      is_paid: true,
+      is_verified: true,
+      status: 'approved'
     });
 
     const token = generateToken(user);
     
-    console.log('✅ Vendeur créé:', user.email);
+    console.log('✅ Vendeur créé (inscription gratuite):', user.email);
 
     res.status(201).json({
       success: true,
       token,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        avatar: user.avatar,
-        role: user.role,
-        vendor: {
-          id: vendor.id,
-          cin: vendor.cin,
-          firstName: vendor.first_name,
-          lastName: vendor.last_name,
-          contact: vendor.contact,
-          isPaid: vendor.is_paid,
-          isVerified: vendor.is_verified,
-          status: vendor.status
-        }
-      }
+      user: await buildUserPayload(user)
     });
   } catch (error) {
     console.error('❌ Register vendor error:', error);

@@ -1,7 +1,16 @@
-const { Publication, PublicationPhoto, Store, User, Vendor, Buyer, Follow } = require('../models');
+const { Publication, PublicationPhoto, Store, User, Vendor, Buyer, Follow, Department } = require('../models');
 const { Op } = require('sequelize');
 const moment = require('moment');
 const fs = require('fs');
+
+// req.body.photoLegends arrive soit en chaine unique (une seule legende
+// envoyee), soit en tableau (plusieurs champs "photoLegends" dans le meme
+// FormData) : on normalise toujours vers un tableau, indexe comme les
+// photos correspondantes.
+function normalizeLegends(photoLegends) {
+  if (!photoLegends) return [];
+  return Array.isArray(photoLegends) ? photoLegends : [photoLegends];
+}
 
 // === CRÉER UNE PUBLICATION ===
 exports.createPublication = async (req, res) => {
@@ -10,8 +19,9 @@ exports.createPublication = async (req, res) => {
     console.log('Body:', req.body);
     console.log('Files:', req.files);
 
-    const { storeId, legend, duration, isPermanent, price, category } = req.body;
-    
+    const { storeId, legend, duration, isPermanent, price, category, photoLegends } = req.body;
+    const legends = normalizeLegends(photoLegends);
+
     // Vérifier les photos (upload.array -> req.files, plusieurs possibles)
     if (!req.files || req.files.length === 0) {
       console.log('❌ Aucun fichier reçu');
@@ -58,6 +68,7 @@ exports.createPublication = async (req, res) => {
         publication_id: publication.id,
         photo,
         position: index,
+        legend: legends[index] || null,
       }))
     );
 
@@ -91,7 +102,8 @@ exports.createPublication = async (req, res) => {
 exports.updatePublication = async (req, res) => {
   try {
     const { id } = req.params;
-    const { legend, duration, isPermanent, price, category } = req.body;
+    const { legend, duration, isPermanent, price, category, photoLegends } = req.body;
+    const legends = normalizeLegends(photoLegends);
 
     const publication = await Publication.findByPk(id);
     if (!publication) {
@@ -131,7 +143,20 @@ exports.updatePublication = async (req, res) => {
           publication_id: id,
           photo,
           position: index,
+          legend: legends[index] || null,
         }))
+      );
+    } else if (legends.length > 0) {
+      // Pas de nouvelle photo envoyee : on met juste a jour les legendes
+      // des photos existantes de la galerie, dans l'ordre de position.
+      const existingPhotos = await PublicationPhoto.findAll({
+        where: { publication_id: id },
+        order: [['position', 'ASC']],
+      });
+      await Promise.all(
+        existingPhotos.map((p, index) =>
+          legends[index] !== undefined ? p.update({ legend: legends[index] || null }) : null
+        )
       );
     }
 
@@ -189,6 +214,7 @@ exports.getGlobalPublications = async (req, res) => {
               model: Vendor,
               include: [{ model: User, attributes: ['id', 'name', 'avatar'] }],
             },
+            { model: Department, as: 'department', attributes: ['id', 'name'] },
           ],
         },
         {
@@ -205,7 +231,12 @@ exports.getGlobalPublications = async (req, res) => {
     const formattedPublications = publications.map(pub => ({
       ...pub.toJSON(),
       photo: pub.photo || null,
-      photos: (pub.PublicationPhotos || []).map((p) => p.photo)
+      photos: (pub.PublicationPhotos || []).map((p) => ({
+        id: p.id,
+        photo: p.photo,
+        legend: p.legend,
+        position: p.position,
+      }))
     }));
 
     res.json({
@@ -249,7 +280,12 @@ exports.getStorePublications = async (req, res) => {
     const formattedPublications = publications.map(pub => ({
       ...pub.toJSON(),
       photo: pub.photo || null,
-      photos: (pub.PublicationPhotos || []).map((p) => p.photo)
+      photos: (pub.PublicationPhotos || []).map((p) => ({
+        id: p.id,
+        photo: p.photo,
+        legend: p.legend,
+        position: p.position,
+      }))
     }));
 
     res.json({
@@ -404,13 +440,19 @@ exports.searchPublications = async (req, res) => {
       where: {
         is_active: true,
         is_draft: false,
-        [Op.or]: [
-          { legend: { [Op.like]: `%${q}%` } },
-          { '$Store.name$': { [Op.like]: `%${q}%` } }
-        ],
-        [Op.or]: [
-          { is_permanent: true },
-          { expires_at: { [Op.gt]: moment().toDate() } }
+        [Op.and]: [
+          {
+            [Op.or]: [
+              { legend: { [Op.like]: `%${q}%` } },
+              { '$Store.name$': { [Op.like]: `%${q}%` } }
+            ]
+          },
+          {
+            [Op.or]: [
+              { is_permanent: true },
+              { expires_at: { [Op.gt]: moment().toDate() } }
+            ]
+          }
         ]
       },
       include: [
@@ -421,6 +463,7 @@ exports.searchPublications = async (req, res) => {
               model: Vendor,
               include: [{ model: User, attributes: ['id', 'name', 'avatar'] }],
             },
+            { model: Department, as: 'department', attributes: ['id', 'name'] },
           ],
         },
         {
@@ -435,7 +478,12 @@ exports.searchPublications = async (req, res) => {
     const formattedPublications = publications.map(pub => ({
       ...pub.toJSON(),
       photo: pub.photo || null,
-      photos: (pub.PublicationPhotos || []).map((p) => p.photo)
+      photos: (pub.PublicationPhotos || []).map((p) => ({
+        id: p.id,
+        photo: p.photo,
+        legend: p.legend,
+        position: p.position,
+      }))
     }));
 
     res.json({
@@ -487,6 +535,7 @@ exports.getFollowedPublications = async (req, res) => {
               model: Vendor,
               include: [{ model: User, attributes: ['id', 'name', 'avatar'] }],
             },
+            { model: Department, as: 'department', attributes: ['id', 'name'] },
           ],
         },
         {
@@ -501,7 +550,12 @@ exports.getFollowedPublications = async (req, res) => {
     const formattedPublications = publications.map(pub => ({
       ...pub.toJSON(),
       photo: pub.photo || null,
-      photos: (pub.PublicationPhotos || []).map((p) => p.photo)
+      photos: (pub.PublicationPhotos || []).map((p) => ({
+        id: p.id,
+        photo: p.photo,
+        legend: p.legend,
+        position: p.position,
+      }))
     }));
 
     res.json({

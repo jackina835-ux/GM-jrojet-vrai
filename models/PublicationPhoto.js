@@ -26,6 +26,10 @@ const PublicationPhoto = sequelize.define('PublicationPhoto', {
     type: DataTypes.INTEGER,
     defaultValue: 0,
   },
+  legend: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+  },
 }, {
   tableName: 'publication_photos',
   timestamps: true,
