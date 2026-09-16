@@ -19,7 +19,7 @@ exports.createPublication = async (req, res) => {
     console.log('Body:', req.body);
     console.log('Files:', req.files);
 
-    const { storeId, legend, duration, isPermanent, price, category, photoLegends } = req.body;
+    const { storeId, productName, legend, duration, isPermanent, price, category, photoLegends } = req.body;
     const legends = normalizeLegends(photoLegends);
 
     // Vérifier les photos (upload.array -> req.files, plusieurs possibles)
@@ -50,6 +50,7 @@ exports.createPublication = async (req, res) => {
     // Créer la publication
     const publication = await Publication.create({
       store_id: parseInt(storeId),
+      product_name: productName || null,
       legend: legend || '',
       photo: photoPath,
       price: price ? parseFloat(price) : null,
@@ -102,7 +103,7 @@ exports.createPublication = async (req, res) => {
 exports.updatePublication = async (req, res) => {
   try {
     const { id } = req.params;
-    const { legend, duration, isPermanent, price, category, photoLegends } = req.body;
+    const { productName, legend, duration, isPermanent, price, category, photoLegends } = req.body;
     const legends = normalizeLegends(photoLegends);
 
     const publication = await Publication.findByPk(id);
@@ -114,6 +115,7 @@ exports.updatePublication = async (req, res) => {
     }
 
     const updates = {};
+    if (productName !== undefined) updates.product_name = productName || null;
     if (legend) updates.legend = legend;
     if (duration) updates.duration = parseInt(duration);
     if (price !== undefined) updates.price = price ? parseFloat(price) : null;

@@ -15,6 +15,11 @@ const Publication = sequelize.define('Publication', {
       key: 'id',
     },
   },
+  // Nom court du produit, distinct de "legend" (description longue).
+  product_name: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+  },
   legend: {
     type: DataTypes.TEXT,
     allowNull: false,
