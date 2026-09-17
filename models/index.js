@@ -12,6 +12,7 @@ const Order = require('./Order');
 const OrderItem = require('./OrderItem');
 const Sale = require('./Sale');
 const Follow = require('./Follow');
+const Message = require('./Message');
 
 // ============================================
 // ASSOCIATIONS
@@ -62,6 +63,12 @@ Follow.belongsTo(Buyer, { foreignKey: 'buyer_id' });
 Store.hasMany(Follow, { foreignKey: 'store_id' });
 Follow.belongsTo(Store, { foreignKey: 'store_id' });
 
+Store.hasMany(Message, { foreignKey: 'store_id' });
+Message.belongsTo(Store, { foreignKey: 'store_id' });
+
+Buyer.hasMany(Message, { foreignKey: 'buyer_id' });
+Message.belongsTo(Buyer, { foreignKey: 'buyer_id' });
+
 module.exports = {
     sequelize,
     User,
@@ -75,5 +82,6 @@ module.exports = {
     Order,
     OrderItem,
     Sale,
-    Follow
+    Follow,
+    Message
 };
