@@ -312,7 +312,8 @@ exports.getAvailableDepartments = async (req, res) => {
 exports.selectDepartment = async (req, res) => {
     try {
         const { vendorId, departmentId, storeName, description, contact } = req.body;
-        const logo = req.file ? '/' + req.file.path.replace(/\\/g, '/') : null;
+        // req.file.path est deja l'URL Cloudinary complete (voir uploadMiddleware.js).
+        const logo = req.file ? req.file.path : null;
 
         // Vérifier que le vendeur existe
         const vendor = await Vendor.findByPk(vendorId);
@@ -401,7 +402,7 @@ exports.selectDepartment = async (req, res) => {
 exports.createDepartment = async (req, res) => {
     try {
         const { name } = req.body;
-        const icon = req.file ? '/' + req.file.path.replace(/\\/g, '/') : null;
+        const icon = req.file ? req.file.path : null;
 
         // Vérifier si le département existe déjà
         const existing = await Department.findOne({ where: { name } });
@@ -438,7 +439,7 @@ exports.updateDepartment = async (req, res) => {
     try {
         const { departmentId } = req.params;
         const { name } = req.body;
-        const icon = req.file ? '/' + req.file.path.replace(/\\/g, '/') : null;
+        const icon = req.file ? req.file.path : null;
 
         const department = await Department.findByPk(departmentId);
         if (!department) {

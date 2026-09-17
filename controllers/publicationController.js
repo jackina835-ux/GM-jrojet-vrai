@@ -31,9 +31,8 @@ exports.createPublication = async (req, res) => {
       });
     }
 
-    // Chaque chemin recupere avec un / en tete, pour former une URL
-    // publique correcte via /uploads/... une fois relu plus tard.
-    const photoPaths = req.files.map((f) => '/' + f.path.replace(/\\/g, '/'));
+    // f.path est deja l'URL Cloudinary complete (voir uploadMiddleware.js).
+    const photoPaths = req.files.map((f) => f.path);
     console.log('📸 Photos sauvegardées:', photoPaths);
 
     // La premiere photo reste la "couverture" (compatibilite avec le
@@ -137,7 +136,7 @@ exports.updatePublication = async (req, res) => {
       });
       await PublicationPhoto.destroy({ where: { publication_id: id } });
 
-      const photoPaths = req.files.map((f) => '/' + f.path.replace(/\\/g, '/'));
+      const photoPaths = req.files.map((f) => f.path);
       updates.photo = photoPaths[0];
 
       await PublicationPhoto.bulkCreate(

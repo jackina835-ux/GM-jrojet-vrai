@@ -160,7 +160,8 @@ exports.registerVendor = async (req, res) => {
     // Le droit de bail reste obligatoire et volontairement bloqué : aucun
     // écran ne permet encore de le fournir, donc cette vérification arrête
     // systématiquement l'inscription à ce stade, par choix assumé.
-    const droitBail = req.file ? '/' + req.file.path.replace(/\\/g, '/') : null;
+    // req.file.path est deja l'URL Cloudinary complete (voir uploadMiddleware.js).
+    const droitBail = req.file ? req.file.path : null;
     if (!droitBail) {
       return res.status(400).json({
         success: false,
