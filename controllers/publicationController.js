@@ -353,14 +353,22 @@ exports.deletePublication = async (req, res) => {
 };
 
 // === RÉCUPÉRER LES BROUILLONS ===
+//
+// Un "brouillon" regroupe ici deux cas distincts, tous les deux invisibles
+// des acheteurs et geres depuis le meme ecran vendeur :
+// - les vrais brouillons (is_draft: true, is_active: false)
+// - les publications expirees (is_active: true, pas permanentes,
+//   expires_at depasse) : avant, elles disparaissaient simplement de
+//   partout sans que le vendeur puisse les retrouver pour les modifier,
+//   supprimer ou republier.
 exports.getDrafts = async (req, res) => {
   try {
     const { vendorId } = req.params;
 
-    const store = await Store.findOne({ 
-      where: { vendor_id: vendorId } 
+    const store = await Store.findOne({
+      where: { vendor_id: vendorId }
     });
-    
+
     if (!store) {
       return res.status(404).json({
         success: false,
@@ -371,15 +379,35 @@ exports.getDrafts = async (req, res) => {
     const drafts = await Publication.findAll({
       where: {
         store_id: store.id,
-        is_draft: true,
-        is_active: false
+        [Op.or]: [
+          { is_draft: true, is_active: false },
+          {
+            is_active: true,
+            is_draft: false,
+            is_permanent: false,
+            expires_at: { [Op.lte]: moment().toDate() }
+          }
+        ]
       },
+      include: [
+        {
+          model: PublicationPhoto,
+          separate: true,
+          order: [['position', 'ASC']],
+        }
+      ],
       order: [['created_at', 'DESC']]
     });
 
     const formattedDrafts = drafts.map(draft => ({
       ...draft.toJSON(),
-      photo: draft.photo || null
+      photo: draft.photo || null,
+      photos: (draft.PublicationPhotos || []).map((p) => ({
+        id: p.id,
+        photo: p.photo,
+        legend: p.legend,
+        position: p.position,
+      }))
     }));
 
     res.json({
@@ -399,7 +427,7 @@ exports.getDrafts = async (req, res) => {
 exports.republishFromDraft = async (req, res) => {
   try {
     const { id } = req.params;
-    const { duration } = req.body;
+    const { duration, isPermanent } = req.body;
 
     const publication = await Publication.findByPk(id);
     if (!publication) {
@@ -409,15 +437,19 @@ exports.republishFromDraft = async (req, res) => {
       });
     }
 
+    // Avant : is_permanent etait toujours force a false ici, donc choisir
+    // "Permanent" au moment de republier ne faisait rien -- la publication
+    // repartait avec la duree par defaut (4h) sans jamais rester permanente.
+    const permanent = isPermanent === true || isPermanent === 'true';
     const durationHours = parseInt(duration) || 4;
-    const expiresAt = moment().add(durationHours, 'hours').toDate();
+    const expiresAt = permanent ? null : moment().add(durationHours, 'hours').toDate();
 
     await publication.update({
       is_active: true,
       is_draft: false,
       duration: durationHours,
       expires_at: expiresAt,
-      is_permanent: false
+      is_permanent: permanent
     });
 
     res.json({
