@@ -1,5 +1,24 @@
 const { Message, Buyer, Vendor, Store, User } = require('../models');
 
+// === ACHETEUR : nombre de messages non lus (tous magasins confondus) ===
+exports.getBuyerUnreadCount = async (req, res) => {
+  try {
+    const buyer = await Buyer.findOne({ where: { user_id: req.user.id } });
+    if (!buyer) {
+      return res.status(404).json({ success: false, message: 'Acheteur non trouvé' });
+    }
+
+    const count = await Message.count({
+      where: { buyer_id: buyer.id, sender_role: 'vendor', is_read: false },
+    });
+
+    res.json({ success: true, count });
+  } catch (error) {
+    console.error('Get buyer unread count error:', error);
+    res.status(500).json({ success: false, message: 'Erreur lors du comptage des messages non lus' });
+  }
+};
+
 // === ACHETEUR : conversation avec un magasin ===
 exports.getStoreConversation = async (req, res) => {
   try {
