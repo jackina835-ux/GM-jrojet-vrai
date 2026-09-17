@@ -1,6 +1,21 @@
 const { Stock, Store } = require('../models');
 const { Op } = require('sequelize');
 
+// Le champ "Date d'arrivage" du formulaire vendeur est un texte libre au
+// format francais JJ/MM/AAAA (voir le placeholder dans ManagementScreen.js)
+// -- MySQL attend AAAA-MM-JJ. Sans conversion, une date saisie fait
+// echouer l'INSERT/UPDATE ("Erreur lors de l'ajout de l'article"), meme
+// quand tous les autres champs sont valides. Format inattendu ou invalide
+// -> null plutot qu'une erreur serveur.
+function parseFrenchDate(value) {
+  if (!value) return null;
+  const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(value).trim());
+  if (!match) return null;
+  const [, day, month, year] = match;
+  const date = new Date(Number(year), Number(month) - 1, Number(day));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 exports.getStoreStock = async (req, res) => {
   try {
     const { storeId } = req.params;
@@ -64,7 +79,7 @@ exports.addStockItem = async (req, res) => {
       quantity: parseInt(quantity) || 0,
       price: parseFloat(price) || 0,
       unit: unit || null,
-      arrival_date: arrivalDate || null
+      arrival_date: parseFrenchDate(arrivalDate)
     });
 
     res.status(201).json({
@@ -99,7 +114,7 @@ exports.updateStockItem = async (req, res) => {
     if (quantity !== undefined) updates.quantity = parseInt(quantity);
     if (price !== undefined) updates.price = parseFloat(price);
     if (unit !== undefined) updates.unit = unit;
-    if (arrivalDate !== undefined) updates.arrival_date = arrivalDate;
+    if (arrivalDate !== undefined) updates.arrival_date = parseFrenchDate(arrivalDate);
 
     await stock.update(updates);
 
