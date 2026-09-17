@@ -19,6 +19,46 @@ exports.getBuyerUnreadCount = async (req, res) => {
   }
 };
 
+// === ACHETEUR : liste de ses conversations (une par magasin) ===
+exports.getBuyerConversations = async (req, res) => {
+  try {
+    const buyer = await Buyer.findOne({ where: { user_id: req.user.id } });
+    if (!buyer) {
+      return res.status(404).json({ success: false, message: 'Acheteur non trouvé' });
+    }
+
+    const messages = await Message.findAll({
+      where: { buyer_id: buyer.id },
+      include: [{ model: Store, attributes: ['id', 'name', 'logo'] }],
+      order: [['created_at', 'DESC']],
+    });
+
+    const conversationsByStore = new Map();
+    for (const msg of messages) {
+      const storeId = msg.store_id;
+      if (!conversationsByStore.has(storeId)) {
+        conversationsByStore.set(storeId, {
+          storeId,
+          storeName: msg.Store?.name || 'Magasin',
+          storeLogo: msg.Store?.logo || null,
+          lastMessage: msg.content,
+          lastMessageAt: msg.createdAt,
+          unreadCount: 0,
+        });
+      }
+      const conv = conversationsByStore.get(storeId);
+      if (msg.sender_role === 'vendor' && !msg.is_read) {
+        conv.unreadCount += 1;
+      }
+    }
+
+    res.json({ success: true, conversations: [...conversationsByStore.values()] });
+  } catch (error) {
+    console.error('Get buyer conversations error:', error);
+    res.status(500).json({ success: false, message: 'Erreur lors de la récupération des conversations' });
+  }
+};
+
 // === ACHETEUR : conversation avec un magasin ===
 exports.getStoreConversation = async (req, res) => {
   try {

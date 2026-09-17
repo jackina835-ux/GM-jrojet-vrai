@@ -13,6 +13,7 @@ router.get('/conversations', authMiddleware, roleMiddleware(['vendor']), message
 // Cote acheteur : nombre de messages non lus (chemin fixe, doit precéder
 // /store/:storeId sinon Express le prendrait pour un storeId)
 router.get('/unread-count', authMiddleware, roleMiddleware(['buyer']), messageController.getBuyerUnreadCount);
+router.get('/my-conversations', authMiddleware, roleMiddleware(['buyer']), messageController.getBuyerConversations);
 
 // Cote acheteur : conversation avec un magasin precis
 router.get('/store/:storeId', authMiddleware, roleMiddleware(['buyer']), messageController.getStoreConversation);
