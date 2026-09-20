@@ -3,6 +3,7 @@ const router = express.Router();
 const departmentController = require('../controllers/departmentController');
 const authMiddleware = require('../middlewares/authMiddleware');
 const roleMiddleware = require('../middlewares/roleMiddleware');
+const { requireVendor } = require('../middlewares/actorMiddleware');
 // ✅ IMPORT CORRECT
 const { upload, handleUploadError } = require('../middlewares/uploadMiddleware');
 
@@ -20,32 +21,34 @@ router.get('/:departmentId', departmentController.getDepartmentById);
 router.get('/:departmentId/stores', departmentController.getDepartmentStores);
 router.get('/:departmentId/active', departmentController.checkDepartmentActive);
 
-// ✅ CORRIGÉ
+// Creation du magasin du vendeur CONNECTE : requireVendor retrouve le
+// vendeur depuis le jeton (req.vendor), plus de vendorId dans le corps.
+// requireVendor passe AVANT multer : un non-vendeur ne peut rien uploader.
 router.post(
-  '/select', 
-  authMiddleware, 
-  roleMiddleware(['vendor']), 
-  upload.single('logo'), 
+  '/select',
+  authMiddleware,
+  ...requireVendor,
+  upload.single('logo'),
   handleUploadError,
   departmentController.selectDepartment
 );
 
 // Routes admin - ✅ CORRIGÉ
 router.post(
-  '/', 
-  authMiddleware, 
-  roleMiddleware(['admin']), 
-  upload.single('icon'), 
+  '/',
+  authMiddleware,
+  roleMiddleware(['admin']),
+  upload.single('icon'),
   handleUploadError,
   departmentController.createDepartment
 );
 
 // ✅ CORRIGÉ
 router.put(
-  '/:departmentId', 
-  authMiddleware, 
-  roleMiddleware(['admin']), 
-  upload.single('icon'), 
+  '/:departmentId',
+  authMiddleware,
+  roleMiddleware(['admin']),
+  upload.single('icon'),
   handleUploadError,
   departmentController.updateDepartment
 );

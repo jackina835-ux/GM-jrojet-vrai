@@ -3,15 +3,8 @@ const { Op } = require('sequelize');
 
 exports.getVendorStats = async (req, res) => {
   try {
-    const { vendorId } = req.params;
-
-    const store = await Store.findOne({ where: { vendor_id: vendorId } });
-    if (!store) {
-      return res.status(404).json({
-        success: false,
-        message: 'Magasin non trouvé'
-      });
-    }
+    // Magasin du vendeur connecte (req.store, pose par requireStore)
+    const store = req.store;
 
     const now = new Date();
     const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -82,16 +75,9 @@ exports.getVendorStats = async (req, res) => {
 
 exports.getSalesChart = async (req, res) => {
   try {
-    const { vendorId } = req.params;
     const { period = 'month' } = req.query;
 
-    const store = await Store.findOne({ where: { vendor_id: vendorId } });
-    if (!store) {
-      return res.status(404).json({
-        success: false,
-        message: 'Magasin non trouvé'
-      });
-    }
+    const store = req.store;
 
     let labels = [];
     let data = [];
@@ -211,7 +197,8 @@ exports.getDepartmentStats = async (req, res) => {
 
 exports.getStoreStats = async (req, res) => {
   try {
-    const { storeId } = req.params;
+    // Toujours le magasin du vendeur connecte, jamais un id venu de l'URL.
+    const storeId = req.store.id;
 
     const store = await Store.findByPk(storeId, {
       include: [
@@ -294,15 +281,7 @@ exports.getStoreStats = async (req, res) => {
 
 exports.getPublicationStats = async (req, res) => {
   try {
-    const { vendorId } = req.params;
-
-    const store = await Store.findOne({ where: { vendor_id: vendorId } });
-    if (!store) {
-      return res.status(404).json({
-        success: false,
-        message: 'Magasin non trouvé'
-      });
-    }
+    const store = req.store;
 
     const total = await Publication.count({
       where: { store_id: store.id }
@@ -343,16 +322,9 @@ exports.getPublicationStats = async (req, res) => {
 
 exports.getTopProducts = async (req, res) => {
   try {
-    const { vendorId } = req.params;
     const limit = parseInt(req.query.limit) || 10;
 
-    const store = await Store.findOne({ where: { vendor_id: vendorId } });
-    if (!store) {
-      return res.status(404).json({
-        success: false,
-        message: 'Magasin non trouvé'
-      });
-    }
+    const store = req.store;
 
     const topProducts = await Sale.findAll({
       where: { store_id: store.id },
@@ -381,16 +353,9 @@ exports.getTopProducts = async (req, res) => {
 
 exports.getRevenueStats = async (req, res) => {
   try {
-    const { vendorId } = req.params;
     const { period = 'month' } = req.query;
 
-    const store = await Store.findOne({ where: { vendor_id: vendorId } });
-    if (!store) {
-      return res.status(404).json({
-        success: false,
-        message: 'Magasin non trouvé'
-      });
-    }
+    const store = req.store;
 
     const now = new Date();
     let dateFilter = {};
@@ -443,7 +408,6 @@ exports.getRevenueStats = async (req, res) => {
 
 exports.getVisitorStats = async (req, res) => {
   try {
-    const { storeId } = req.params;
     const { period = 'month' } = req.query;
 
     // Note: This is a mock implementation since we don't have visitor tracking
@@ -477,7 +441,7 @@ exports.getVisitorStats = async (req, res) => {
 
 exports.getConversionStats = async (req, res) => {
   try {
-    const { storeId } = req.params;
+    const storeId = req.store.id;
 
     const totalVisitors = 1000 + Math.random() * 2000; // Mock data
     const totalSales = await Order.count({

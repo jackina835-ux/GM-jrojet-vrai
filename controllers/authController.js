@@ -1,15 +1,85 @@
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { User, Buyer, Vendor, Store } = require('../models');
 const { verifyGoogleToken } = require('../config/googleAuth');
-const bcrypt = require('bcryptjs');
+const { getJwtSecret, JWT_ALGORITHM } = require('../config/jwt');
+const { maskEmail } = require('../utils/logSafe');
+
+// Journaux : jamais de corps de requete, de mot de passe, de jeton ni
+// d'email complet (les journaux Render les conservent -- anomalie S4,
+// corrigee le 20/09/2026). On note l'id utilisateur ou un email masque.
+// Les reponses d'erreur ne renvoient plus le message interne (erreur SQL,
+// validation...) hors mode developpement.
+const internalError = (error) =>
+  process.env.NODE_ENV === 'development' ? error.message : undefined;
+
+// Ancienne convention du projet : "google_oauth" servait de mot de passe
+// pour les comptes Google, et login() delivrait un jeton a quiconque
+// l'envoyait -- une porte derobee (anomalie S1, corrigee le 20/09/2026).
+// Cette valeur n'est plus jamais acceptee comme mot de passe.
+const RETIRED_GOOGLE_PASSWORD = 'google_oauth';
+const MIN_PASSWORD_LENGTH = 6;
 
 // ✅ GÉNÉRER LE TOKEN JWT
+// Secret lu par config/jwt.js : plus de valeur de repli ecrite dans le code.
 const generateToken = (user) => {
   return jwt.sign(
     { id: user.id, email: user.email, role: user.role },
-    process.env.JWT_SECRET || 'grand_marche_secret_key_2024',
-    { expiresIn: '7d' }
+    getJwtSecret(),
+    { expiresIn: '7d', algorithm: JWT_ALGORITHM }
   );
+};
+
+// ✅ IDENTITE D'UNE INSCRIPTION (acheteur ou vendeur)
+//
+// Une identite ne peut venir que de deux sources :
+// - un email + mot de passe saisis (le mot de passe est alors obligatoire) ;
+// - un jeton Google (googleToken) VERIFIE par le serveur aupres de Google :
+//   email, nom, photo et identifiant Google viennent alors du jeton verifie.
+// Un googleId, un avatar ou un email "Google" envoyes dans le corps sont
+// IGNORES : le client n'est jamais cru sur parole. Avant ce correctif, il
+// suffisait d'envoyer googleId pour creer un compte sans mot de passe.
+//
+// Renvoie { identity } ou { error: { status, message } }.
+const resolveRegistrationIdentity = async (body) => {
+  const { googleToken, email, password, name } = body;
+
+  if (googleToken) {
+    const verified = await verifyGoogleToken(googleToken);
+    if (!verified.success || !verified.user.emailVerified) {
+      return {
+        error: { status: 401, message: 'Jeton Google invalide ou adresse email non vérifiée' }
+      };
+    }
+    return {
+      identity: {
+        email: verified.user.email,
+        name: verified.user.name || name,
+        avatar: verified.user.picture || null,
+        googleId: verified.user.id,
+        // Mot de passe aleatoire jamais communique : un compte Google ne se
+        // connecte que par Google (comparePassword renvoie false pour lui).
+        password: crypto.randomBytes(32).toString('hex')
+      }
+    };
+  }
+
+  if (!email || !password) {
+    return { error: { status: 400, message: 'Email et mot de passe requis' } };
+  }
+  if (password === RETIRED_GOOGLE_PASSWORD) {
+    return { error: { status: 400, message: 'Ce mot de passe n\'est pas autorisé' } };
+  }
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return {
+      error: {
+        status: 400,
+        message: `Le mot de passe doit contenir au moins ${MIN_PASSWORD_LENGTH} caractères`
+      }
+    };
+  }
+
+  return { identity: { email, name, avatar: null, googleId: null, password } };
 };
 
 // ✅ CONSTRUIRE L'OBJET UTILISATEUR RENVOYÉ AU FRONT (avec profil acheteur/vendeur)
@@ -70,10 +140,18 @@ const buildUserPayload = async (user) => {
 exports.registerBuyer = async (req, res) => {
   try {
     console.log('📝 Inscription acheteur...');
-    const { email, password, name, googleId, avatar } = req.body;
+
+    const resolved = await resolveRegistrationIdentity(req.body);
+    if (resolved.error) {
+      return res.status(resolved.error.status).json({
+        success: false,
+        message: resolved.error.message
+      });
+    }
+    const { identity } = resolved;
 
     // Vérifier si l'utilisateur existe
-    const existingUser = await User.findOne({ where: { email } });
+    const existingUser = await User.findOne({ where: { email: identity.email } });
     if (existingUser) {
       return res.status(400).json({
         success: false,
@@ -83,12 +161,12 @@ exports.registerBuyer = async (req, res) => {
 
     // Créer l'utilisateur
     const user = await User.create({
-      email,
-      password: password || 'google_oauth',
-      name: name || email.split('@')[0],
-      avatar: avatar || null,
+      email: identity.email,
+      password: identity.password,
+      name: identity.name || identity.email.split('@')[0],
+      avatar: identity.avatar,
       role: 'buyer',
-      google_id: googleId || null,
+      google_id: identity.googleId,
       is_active: true
     });
 
@@ -99,9 +177,9 @@ exports.registerBuyer = async (req, res) => {
     });
 
     const token = generateToken(user);
-    
-    console.log('✅ Acheteur créé:', user.email);
-    
+
+    console.log('✅ Acheteur créé: id', user.id);
+
     res.status(201).json({
       success: true,
       token,
@@ -112,7 +190,7 @@ exports.registerBuyer = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Erreur lors de l\'inscription',
-      error: error.message
+      error: internalError(error)
     });
   }
 };
@@ -126,30 +204,23 @@ exports.registerBuyer = async (req, res) => {
 // assumé (fonctionnalité à activer plus tard), pas un bug à corriger.
 exports.registerVendor = async (req, res) => {
   try {
+    // (Le corps de la requete etait journalise ici, MOT DE PASSE EN CLAIR
+    // compris : supprime, voir S4.)
     console.log('📝 Inscription vendeur...');
-    console.log('Body:', req.body);
-    console.log('File:', req.file);
 
-    const {
-      email,
-      password,
-      name,
-      firstName,
-      lastName,
-      contact,
-      googleId,
-      avatar
-    } = req.body;
+    const { firstName, lastName, contact } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({
+    const resolved = await resolveRegistrationIdentity(req.body);
+    if (resolved.error) {
+      return res.status(resolved.error.status).json({
         success: false,
-        message: 'Email et mot de passe requis'
+        message: resolved.error.message
       });
     }
+    const { identity } = resolved;
 
     // Vérifier si l'utilisateur existe
-    const existingUser = await User.findOne({ where: { email } });
+    const existingUser = await User.findOne({ where: { email: identity.email } });
     if (existingUser) {
       return res.status(400).json({
         success: false,
@@ -171,12 +242,12 @@ exports.registerVendor = async (req, res) => {
 
     // Créer l'utilisateur
     const user = await User.create({
-      email,
-      password: password || 'google_oauth',
-      name: name || `${firstName || ''} ${lastName || ''}`.trim() || email.split('@')[0],
-      avatar: avatar || null,
+      email: identity.email,
+      password: identity.password,
+      name: identity.name || `${firstName || ''} ${lastName || ''}`.trim() || identity.email.split('@')[0],
+      avatar: identity.avatar,
       role: 'vendor',
-      google_id: googleId || null,
+      google_id: identity.googleId,
       is_active: true
     });
 
@@ -194,8 +265,8 @@ exports.registerVendor = async (req, res) => {
     });
 
     const token = generateToken(user);
-    
-    console.log('✅ Vendeur créé (inscription gratuite):', user.email);
+
+    console.log('✅ Vendeur créé (inscription gratuite): id', user.id);
 
     res.status(201).json({
       success: true,
@@ -207,16 +278,26 @@ exports.registerVendor = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Erreur lors de l\'inscription du vendeur',
-      error: error.message
+      error: internalError(error)
     });
   }
 };
 
-// ✅ CONNEXION
+// ✅ CONNEXION (email + mot de passe UNIQUEMENT)
+//
+// La connexion Google passe par POST /auth/google/verify (jeton verifie).
+// Plus aucune valeur de mot de passe ne donne un acces sans verification.
 exports.login = async (req, res) => {
   try {
-    console.log('🔐 Connexion:', req.body.email);
+    console.log('🔐 Tentative de connexion:', maskEmail(req.body.email));
     const { email, password } = req.body;
+
+    if (!email || !password || typeof password !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Email et mot de passe requis'
+      });
+    }
 
     const user = await User.findOne({ where: { email } });
     if (!user) {
@@ -226,17 +307,18 @@ exports.login = async (req, res) => {
       });
     }
 
-    // Si c'est un compte Google (password = 'google_oauth')
-    if (password === 'google_oauth') {
-      // Connexion automatique pour Google
-      const token = generateToken(user);
-      return res.json({
-        success: true,
-        token,
-        user: await buildUserPayload(user)
+    // Anciens comptes dont le mot de passe reel serait litteralement
+    // "google_oauth" (creation via l'ancienne inscription) : n'importe qui
+    // pourrait le deviner, on refuse cette valeur meme si le hash concorde.
+    // Meme message que pour un mauvais mot de passe.
+    if (password === RETIRED_GOOGLE_PASSWORD) {
+      return res.status(401).json({
+        success: false,
+        message: 'Email ou mot de passe incorrect'
       });
     }
 
+    // comparePassword renvoie toujours false pour un compte Google.
     const isValid = await user.comparePassword(password);
     if (!isValid) {
       return res.status(401).json({
@@ -246,7 +328,7 @@ exports.login = async (req, res) => {
     }
 
     const token = generateToken(user);
-    console.log('✅ Connexion réussie:', user.email);
+    console.log('✅ Connexion réussie: id', user.id);
 
     res.json({
       success: true,
@@ -262,13 +344,22 @@ exports.login = async (req, res) => {
   }
 };
 
-// ✅ VÉRIFICATION GOOGLE
+// ✅ CONNEXION GOOGLE (POST /auth/google/verify)
+//
+// Le client envoie le jeton d'identite Google ({ token }) ; le serveur le
+// verifie aupres de Google, puis :
+// - compte Google deja lie a CETTE identite Google -> jeton de session ;
+// - aucun compte avec cet email -> exists:false + profil verifie, pour que
+//   l'app propose l'inscription (POST /auth/register/buyer avec googleToken) ;
+// - compte existant par mot de passe -> 409 (pas de liaison automatique :
+//   sinon quiconque controle l'adresse chez Google reprendrait le compte).
+// Un jeton de session n'est JAMAIS delivre sans jeton Google verifie.
 exports.verifyGoogle = async (req, res) => {
   try {
     const { token } = req.body;
-    
+
     console.log('🔑 Vérification token Google reçu');
-    
+
     if (!token) {
       return res.status(400).json({
         success: false,
@@ -278,44 +369,54 @@ exports.verifyGoogle = async (req, res) => {
 
     // Vérifier le token avec Google
     const result = await verifyGoogleToken(token);
-    
-    if (!result.success) {
-      console.error('❌ Vérification Google échouée:', result.error);
+
+    if (!result.success || !result.user.emailVerified) {
+      console.error('❌ Vérification Google échouée:', result.error || 'email non vérifié');
       return res.status(401).json({
         success: false,
-        message: result.error || 'Token Google invalide'
+        message: 'Jeton Google invalide ou adresse email non vérifiée'
       });
     }
 
-    console.log('✅ Utilisateur vérifié:', result.user.email);
+    console.log('✅ Utilisateur Google vérifié:', maskEmail(result.user.email));
 
-    // Vérifier si l'utilisateur existe déjà
-    let user = await User.findOne({ 
-      where: { email: result.user.email } 
-    });
+    const user = await User.findOne({ where: { email: result.user.email } });
 
-    if (user) {
-      console.log('👤 Utilisateur trouvé:', user.email);
+    if (!user) {
+      console.log('📝 Nouvel utilisateur Google:', maskEmail(result.user.email));
       return res.json({
         success: true,
+        exists: false,
         user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          avatar: user.avatar,
-          role: user.role
-        },
-        exists: true
+          email: result.user.email,
+          name: result.user.name,
+          picture: result.user.picture
+        }
       });
     }
 
-    console.log('📝 Nouvel utilisateur:', result.user.email);
+    if (!user.google_id) {
+      return res.status(409).json({
+        success: false,
+        message: 'Un compte existe déjà avec cet email : connectez-vous avec votre mot de passe.'
+      });
+    }
+
+    if (user.google_id !== result.user.id) {
+      return res.status(401).json({
+        success: false,
+        message: 'Ce compte est lié à une autre identité Google'
+      });
+    }
+
+    console.log('👤 Connexion Google: id', user.id);
     res.json({
       success: true,
-      user: result.user,
-      exists: false
+      exists: true,
+      token: generateToken(user),
+      user: await buildUserPayload(user)
     });
-    
+
   } catch (error) {
     console.error('❌ Erreur verifyGoogle:', error);
     res.status(500).json({
@@ -331,7 +432,7 @@ exports.getMe = async (req, res) => {
     const user = await User.findByPk(req.user.id, {
       attributes: ['id', 'email', 'name', 'avatar', 'role', 'is_active']
     });
-    
+
     if (!user) {
       return res.status(404).json({
         success: false,

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const vendorController = require('../controllers/vendorController');
 const authMiddleware = require('../middlewares/authMiddleware');
+const { requireStore } = require('../middlewares/actorMiddleware');
 // ✅ IMPORT CORRECT AVEC LES CROCHETS
 const { upload, handleUploadError } = require('../middlewares/uploadMiddleware');
 
@@ -10,7 +11,10 @@ router.get('/profile', authMiddleware, vendorController.getProfile);
 router.put('/profile', authMiddleware, vendorController.updateProfile);
 
 // Gestion du magasin - ✅ CORRIGÉ
-router.put('/store', authMiddleware, upload.single('logo'), handleUploadError, vendorController.updateStore);
+// requireStore AVANT multer : un compte qui n'est pas vendeur (ou sans
+// magasin) ne peut rien envoyer vers Cloudinary. Le magasin modifie est
+// toujours celui du jeton.
+router.put('/store', authMiddleware, ...requireStore, upload.single('logo'), handleUploadError, vendorController.updateStore);
 router.get('/store', authMiddleware, vendorController.getStore);
 
 // Commandes vendeur

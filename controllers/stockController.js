@@ -1,5 +1,13 @@
-const { Stock, Store } = require('../models');
+const { Stock } = require('../models');
 const { Op } = require('sequelize');
+
+// Toutes les routes de ce controleur passent par requireStore
+// (middlewares/actorMiddleware.js) : req.store est le magasin du vendeur
+// CONNECTE, tire du jeton. Aucun storeId/vendorId n'est lu dans le corps ou
+// l'URL, et chaque article est recherche AVEC store_id = req.store.id, donc
+// un vendeur ne peut ni lire, ni modifier, ni supprimer le stock d'un autre.
+// (Exception volontaire : checkAvailability, lecture seule de la quantite
+// d'un article, ouverte a tout utilisateur connecte.)
 
 // Le champ "Date d'arrivage" du formulaire vendeur est un texte libre au
 // format francais JJ/MM/AAAA (voir le placeholder dans ManagementScreen.js)
@@ -16,12 +24,11 @@ function parseFrenchDate(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-exports.getStoreStock = async (req, res) => {
+// Stock du vendeur connecte
+exports.getMyStock = async (req, res) => {
   try {
-    const { storeId } = req.params;
-    
     const stock = await Stock.findAll({
-      where: { store_id: storeId },
+      where: { store_id: req.store.id },
       order: [['category', 'ASC'], ['name', 'ASC']]
     });
 
@@ -30,37 +37,7 @@ exports.getStoreStock = async (req, res) => {
       stock
     });
   } catch (error) {
-    console.error('Get store stock error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erreur lors de la récupération du stock'
-    });
-  }
-};
-
-exports.getVendorStock = async (req, res) => {
-  try {
-    const { vendorId } = req.params;
-    
-    const store = await Store.findOne({ where: { vendor_id: vendorId } });
-    if (!store) {
-      return res.status(404).json({
-        success: false,
-        message: 'Magasin non trouvé'
-      });
-    }
-
-    const stock = await Stock.findAll({
-      where: { store_id: store.id },
-      order: [['category', 'ASC'], ['name', 'ASC']]
-    });
-
-    res.json({
-      success: true,
-      stock
-    });
-  } catch (error) {
-    console.error('Get vendor stock error:', error);
+    console.error('Get my stock error:', error);
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la récupération du stock'
@@ -70,10 +47,10 @@ exports.getVendorStock = async (req, res) => {
 
 exports.addStockItem = async (req, res) => {
   try {
-    const { storeId, name, category, quantity, price, unit, arrivalDate } = req.body;
+    const { name, category, quantity, price, unit, arrivalDate } = req.body;
 
     const stock = await Stock.create({
-      store_id: storeId,
+      store_id: req.store.id,
       name,
       category: category || null,
       quantity: parseInt(quantity) || 0,
@@ -100,7 +77,7 @@ exports.updateStockItem = async (req, res) => {
     const { id } = req.params;
     const { name, category, quantity, price, unit, arrivalDate } = req.body;
 
-    const stock = await Stock.findByPk(id);
+    const stock = await Stock.findOne({ where: { id, store_id: req.store.id } });
     if (!stock) {
       return res.status(404).json({
         success: false,
@@ -134,8 +111,8 @@ exports.updateStockItem = async (req, res) => {
 exports.deleteStockItem = async (req, res) => {
   try {
     const { id } = req.params;
-    
-    const stock = await Stock.findByPk(id);
+
+    const stock = await Stock.findOne({ where: { id, store_id: req.store.id } });
     if (!stock) {
       return res.status(404).json({
         success: false,
@@ -160,10 +137,8 @@ exports.deleteStockItem = async (req, res) => {
 
 exports.getStockCategories = async (req, res) => {
   try {
-    const { storeId } = req.params;
-    
     const categories = await Stock.findAll({
-      where: { store_id: storeId },
+      where: { store_id: req.store.id },
       attributes: ['category'],
       group: ['category']
     });
@@ -183,11 +158,11 @@ exports.getStockCategories = async (req, res) => {
 
 exports.searchStock = async (req, res) => {
   try {
-    const { storeId, q } = req.query;
-    
+    const q = req.query.q || '';
+
     const stock = await Stock.findAll({
       where: {
-        store_id: storeId,
+        store_id: req.store.id,
         [Op.or]: [
           { name: { [Op.like]: `%${q}%` } },
           { category: { [Op.like]: `%${q}%` } }
@@ -212,7 +187,7 @@ exports.searchStock = async (req, res) => {
 exports.checkAvailability = async (req, res) => {
   try {
     const { itemId, quantity } = req.body;
-    
+
     const stock = await Stock.findByPk(itemId);
     if (!stock) {
       return res.status(404).json({

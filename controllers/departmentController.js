@@ -311,22 +311,17 @@ exports.getAvailableDepartments = async (req, res) => {
  */
 exports.selectDepartment = async (req, res) => {
     try {
-        const { vendorId, departmentId, storeName, description, contact } = req.body;
+        // Le vendeur est celui du JETON (req.vendor, pose par requireVendor) :
+        // un vendorId envoye dans le corps est ignore. Sinon n'importe quel
+        // compte pouvait creer le magasin d'un autre vendeur.
+        const { departmentId, storeName, description, contact } = req.body;
         // req.file.path est deja l'URL Cloudinary complete (voir uploadMiddleware.js).
         const logo = req.file ? req.file.path : null;
-
-        // Vérifier que le vendeur existe
-        const vendor = await Vendor.findByPk(vendorId);
-        if (!vendor) {
-            return res.status(404).json({
-                success: false,
-                message: 'Vendeur non trouvé'
-            });
-        }
+        const vendorId = req.vendor.id;
 
         // Vérifier que le vendeur n'a pas déjà un magasin
-        const existingStore = await Store.findOne({ 
-            where: { vendor_id: vendorId } 
+        const existingStore = await Store.findOne({
+            where: { vendor_id: vendorId }
         });
         if (existingStore) {
             return res.status(400).json({

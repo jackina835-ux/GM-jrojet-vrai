@@ -15,11 +15,12 @@ function normalizeLegends(photoLegends) {
 // === CRÉER UNE PUBLICATION ===
 exports.createPublication = async (req, res) => {
   try {
+    // (req.body et req.files etaient journalises en entier : supprime, S4.)
     console.log('📝 Création d\'une publication...');
-    console.log('Body:', req.body);
-    console.log('Files:', req.files);
 
-    const { storeId, productName, legend, duration, isPermanent, price, category, photoLegends } = req.body;
+    // Le magasin est celui du vendeur CONNECTE (req.store, pose par
+    // requireStore) : un storeId envoye dans le corps est ignore.
+    const { productName, legend, duration, isPermanent, price, category, photoLegends } = req.body;
     const legends = normalizeLegends(photoLegends);
 
     // Vérifier les photos (upload.array -> req.files, plusieurs possibles)
@@ -48,7 +49,7 @@ exports.createPublication = async (req, res) => {
 
     // Créer la publication
     const publication = await Publication.create({
-      store_id: parseInt(storeId),
+      store_id: req.store.id,
       product_name: productName || null,
       legend: legend || '',
       photo: photoPath,
@@ -93,7 +94,7 @@ exports.createPublication = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la création de la publication',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -190,7 +191,7 @@ exports.updatePublication = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la mise à jour de la publication',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -362,18 +363,9 @@ exports.deletePublication = async (req, res) => {
 //   supprimer ou republier.
 exports.getDrafts = async (req, res) => {
   try {
-    const { vendorId } = req.params;
-
-    const store = await Store.findOne({
-      where: { vendor_id: vendorId }
-    });
-
-    if (!store) {
-      return res.status(404).json({
-        success: false,
-        message: 'Magasin non trouvé'
-      });
-    }
+    // Magasin du vendeur connecte (req.store, pose par requireStore) :
+    // plus de vendorId dans l'URL.
+    const store = req.store;
 
     const drafts = await Publication.findAll({
       where: {

@@ -1,5 +1,6 @@
 const { OAuth2Client } = require('google-auth-library');
 const dotenv = require('dotenv');
+const { maskEmail } = require('../utils/logSafe');
 
 dotenv.config();
 
@@ -26,7 +27,7 @@ const verifyGoogleToken = async (token) => {
     });
     
     const payload = ticket.getPayload();
-    console.log('✅ Token vérifié pour:', payload.email);
+    console.log('✅ Token Google vérifié pour:', maskEmail(payload.email));
     
     return {
       success: true,
@@ -35,13 +36,20 @@ const verifyGoogleToken = async (token) => {
         email: payload.email,
         name: payload.name,
         picture: payload.picture,
+        // Google garantit que l'adresse appartient bien a cette personne
+        // seulement si email_verified est vrai : c'est ce booleen que
+        // authController exige avant de connecter ou d'inscrire quelqu'un.
+        emailVerified: payload.email_verified === true,
       }
     };
   } catch (error) {
-    console.error('❌ Erreur verifyGoogleToken:', error);
+    // Le message d'erreur de google-auth-library peut CONTENIR le jeton
+    // recu ("Wrong number of segments in token: ...") : on ne journalise
+    // que le type d'erreur, et on ne renvoie qu'un message generique.
+    console.error(`❌ Erreur verifyGoogleToken (${error.name})`);
     return {
       success: false,
-      error: error.message
+      error: 'Jeton Google invalide'
     };
   }
 };

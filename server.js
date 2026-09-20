@@ -5,6 +5,16 @@ const path = require('path');
 
 dotenv.config();
 
+// Refuse de demarrer sans JWT_SECRET valide (pas de secret de repli, voir
+// config/jwt.js) : mieux vaut un arret clair au deploiement qu'un serveur
+// qui signe ou rejette les jetons a tort.
+try {
+  require('./config/jwt').assertJwtSecret();
+} catch (error) {
+  console.error(`❌ Configuration invalide : ${error.message}`);
+  process.exit(1);
+}
+
 // Import routes
 const authRoutes = require('./routes/authRoutes');
 const buyerRoutes = require('./routes/buyerRoutes');
@@ -24,6 +34,12 @@ const sequelize = require('./config/db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Render place le serveur derriere un proxy : sans ceci, req.ip vaut
+// l'adresse du proxy pour TOUS les clients, et la limitation des essais
+// (middlewares/rateLimiter.js) bloquerait tout le monde ensemble. "1" = on
+// fait confiance a un seul proxy (celui de Render).
+app.set('trust proxy', 1);
 
 // Middleware
 app.use(cors());
@@ -55,9 +71,13 @@ app.get('/api/health', (req, res) => {
 // Error handler global
 app.use((err, req, res, next) => {
   console.error('❌ Error:', err.stack);
-  res.status(err.status || 500).json({
+  const status = err.status || err.statusCode || 500;
+  res.status(status).json({
     success: false,
-    message: err.message || 'Erreur serveur',
+    // Une erreur interne (SQL, bibliotheque...) ne doit pas etre renvoyee
+    // telle quelle au client : message generique des qu'on est en 5xx.
+    // Les erreurs client "exposables" (ex : JSON mal forme) gardent leur texte.
+    message: status < 500 && err.expose ? err.message : 'Erreur serveur',
     error: process.env.NODE_ENV === 'development' ? err.message : undefined
   });
 });

@@ -17,7 +17,11 @@ const sequelize = new Sequelize(
     host: process.env.DB_HOST,
     port: process.env.DB_PORT || 3306,
     dialect: 'mysql',
-    logging: console.log,
+    // Les requetes SQL (avec leurs valeurs : hash de mots de passe, emails,
+    // messages...) ne sont PLUS journalisees par defaut : les journaux
+    // Render les conservent (anomalie S4). Pour deboguer ponctuellement,
+    // definir DB_LOGGING=true (a retirer ensuite).
+    logging: process.env.DB_LOGGING === 'true' ? console.log : false,
     define: {
       timestamps: true,
       underscored: true,

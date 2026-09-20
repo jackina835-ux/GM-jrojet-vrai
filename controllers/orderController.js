@@ -1,16 +1,30 @@
 const { Order, OrderItem, Buyer, Store, Stock, User, Vendor } = require('../models');
-const { Op } = require('sequelize');
+
+// L'acteur (acheteur ou vendeur) vient TOUJOURS du jeton, via
+// middlewares/actorMiddleware.js : req.buyer (acheteur connecte) et
+// req.store (magasin du vendeur connecte). Aucun buyerId/vendorId n'est lu
+// dans le corps ou l'URL. Une commande n'est accessible qu'a l'acheteur qui
+// l'a passee et au magasin qui la recoit ; sinon reponse 404 (on ne revele
+// pas l'existence d'une commande d'autrui).
+
+// Condition SQL "cette commande m'appartient" selon le role connecte.
+const ownershipWhere = (req, id) => {
+  if (req.buyer) return { id, buyer_id: req.buyer.id };
+  if (req.store) return { id, store_id: req.store.id };
+  return null;
+};
 
 exports.createOrder = async (req, res) => {
   try {
-    const { buyerId, storeId, items, deliveryAddress } = req.body;
+    // buyerId = acheteur du jeton (jamais le corps). storeId est le magasin
+    // auquel l'acheteur commande : entree legitime, mais on verifie que chaque
+    // article commande appartient bien a CE magasin.
+    const { storeId, items, deliveryAddress } = req.body;
 
-    // Check if buyer exists
-    const buyer = await Buyer.findByPk(buyerId);
-    if (!buyer) {
-      return res.status(404).json({
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({
         success: false,
-        message: 'Acheteur non trouvé'
+        message: 'La commande ne contient aucun article'
       });
     }
 
@@ -28,7 +42,15 @@ exports.createOrder = async (req, res) => {
     const orderItems = [];
 
     for (const item of items) {
-      const stock = await Stock.findByPk(item.stockId);
+      const quantity = parseInt(item.quantity);
+      if (!Number.isInteger(quantity) || quantity <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Quantité invalide pour ${item.name}`
+        });
+      }
+
+      const stock = await Stock.findOne({ where: { id: item.stockId, store_id: store.id } });
       if (!stock) {
         return res.status(404).json({
           success: false,
@@ -36,20 +58,20 @@ exports.createOrder = async (req, res) => {
         });
       }
 
-      if (stock.quantity < item.quantity) {
+      if (stock.quantity < quantity) {
         return res.status(400).json({
           success: false,
           message: `Stock insuffisant pour ${item.name}`
         });
       }
 
-      const itemTotal = parseFloat(stock.price) * parseInt(item.quantity);
+      const itemTotal = parseFloat(stock.price) * quantity;
       total += itemTotal;
 
       orderItems.push({
         stock_id: stock.id,
         product_name: stock.name,
-        quantity: parseInt(item.quantity),
+        quantity,
         price: parseFloat(stock.price),
         total: itemTotal
       });
@@ -57,8 +79,8 @@ exports.createOrder = async (req, res) => {
 
     // Create order
     const order = await Order.create({
-      buyer_id: buyerId,
-      store_id: storeId,
+      buyer_id: req.buyer.id,
+      store_id: store.id,
       total: total,
       status: 'pending',
       delivery_address: deliveryAddress || null,
@@ -95,12 +117,11 @@ exports.createOrder = async (req, res) => {
   }
 };
 
+// Commandes de l'acheteur connecte
 exports.getBuyerOrders = async (req, res) => {
   try {
-    const { buyerId } = req.params;
-
     const orders = await Order.findAll({
-      where: { buyer_id: buyerId },
+      where: { buyer_id: req.buyer.id },
       include: [
         {
           model: Store,
@@ -131,20 +152,11 @@ exports.getBuyerOrders = async (req, res) => {
   }
 };
 
+// Commandes recues par le magasin du vendeur connecte
 exports.getVendorOrders = async (req, res) => {
   try {
-    const { vendorId } = req.params;
-
-    const store = await Store.findOne({ where: { vendor_id: vendorId } });
-    if (!store) {
-      return res.status(404).json({
-        success: false,
-        message: 'Magasin non trouvé'
-      });
-    }
-
     const orders = await Order.findAll({
-      where: { store_id: store.id },
+      where: { store_id: req.store.id },
       include: [
         {
           model: Buyer,
@@ -174,19 +186,9 @@ exports.getVendorOrders = async (req, res) => {
 
 exports.getPendingOrders = async (req, res) => {
   try {
-    const { vendorId } = req.params;
-
-    const store = await Store.findOne({ where: { vendor_id: vendorId } });
-    if (!store) {
-      return res.status(404).json({
-        success: false,
-        message: 'Magasin non trouvé'
-      });
-    }
-
     const orders = await Order.findAll({
       where: {
-        store_id: store.id,
+        store_id: req.store.id,
         status: 'pending'
       },
       include: [
@@ -216,12 +218,15 @@ exports.getPendingOrders = async (req, res) => {
   }
 };
 
+// Modification par l'ACHETEUR proprietaire : uniquement l'adresse de
+// livraison, et tant que la commande est "pending". Les changements de
+// statut passent exclusivement par cancel / validate / deliver.
 exports.updateOrder = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, deliveryAddress } = req.body;
+    const { deliveryAddress } = req.body;
 
-    const order = await Order.findByPk(id);
+    const order = await Order.findOne({ where: { id, buyer_id: req.buyer.id } });
     if (!order) {
       return res.status(404).json({
         success: false,
@@ -229,8 +234,14 @@ exports.updateOrder = async (req, res) => {
       });
     }
 
+    if (order.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: 'Seule une commande en attente peut être modifiée'
+      });
+    }
+
     const updates = {};
-    if (status) updates.status = status;
     if (deliveryAddress) updates.delivery_address = deliveryAddress;
 
     await order.update(updates);
@@ -248,11 +259,13 @@ exports.updateOrder = async (req, res) => {
   }
 };
 
+// Annulation par l'acheteur proprietaire OU par le magasin destinataire.
 exports.cancelOrder = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const order = await Order.findByPk(id);
+    const where = ownershipWhere(req, id);
+    const order = where ? await Order.findOne({ where }) : null;
     if (!order) {
       return res.status(404).json({
         success: false,
@@ -264,6 +277,15 @@ exports.cancelOrder = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Impossible d\'annuler une commande livrée'
+      });
+    }
+
+    // Sans ce test, annuler deux fois la meme commande restituait deux fois
+    // le stock.
+    if (order.status === 'cancelled') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cette commande est déjà annulée'
       });
     }
 
@@ -293,11 +315,12 @@ exports.cancelOrder = async (req, res) => {
   }
 };
 
+// Validation : uniquement par le MAGASIN destinataire (requireStore).
 exports.validateOrder = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const order = await Order.findByPk(id);
+    const order = await Order.findOne({ where: { id, store_id: req.store.id } });
     if (!order) {
       return res.status(404).json({
         success: false,
@@ -327,11 +350,12 @@ exports.validateOrder = async (req, res) => {
   }
 };
 
+// Livraison : uniquement par le MAGASIN destinataire (requireStore).
 exports.markDelivered = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const order = await Order.findByPk(id);
+    const order = await Order.findOne({ where: { id, store_id: req.store.id } });
     if (!order) {
       return res.status(404).json({
         success: false,
@@ -364,32 +388,37 @@ exports.markDelivered = async (req, res) => {
   }
 };
 
+// Detail : acheteur proprietaire OU magasin destinataire.
 exports.getOrderDetails = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const order = await Order.findByPk(id, {
-      include: [
-        {
-          model: Buyer,
-          include: [
-            { model: User, attributes: ['name', 'email', 'avatar'] }
-          ]
-        },
-        {
-          model: Store,
+    const where = ownershipWhere(req, id);
+    const order = where
+      ? await Order.findOne({
+          where,
           include: [
             {
-              model: Vendor,
-              include: [{ model: User, attributes: ['name', 'avatar'] }],
+              model: Buyer,
+              include: [
+                { model: User, attributes: ['name', 'email', 'avatar'] }
+              ]
             },
-          ],
-        },
-        {
-          model: OrderItem
-        }
-      ]
-    });
+            {
+              model: Store,
+              include: [
+                {
+                  model: Vendor,
+                  include: [{ model: User, attributes: ['name', 'avatar'] }],
+                },
+              ],
+            },
+            {
+              model: OrderItem
+            }
+          ]
+        })
+      : null;
 
     if (!order) {
       return res.status(404).json({

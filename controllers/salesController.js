@@ -1,15 +1,44 @@
-const { Sale, Store, Stock } = require('../models');
+const { Sale, Stock } = require('../models');
 const { Op } = require('sequelize');
+
+// Toutes les routes de ce controleur passent par requireStore
+// (middlewares/actorMiddleware.js) : req.store est le magasin du vendeur
+// CONNECTE, tire du jeton. Aucun storeId/vendorId n'est lu dans le corps ou
+// l'URL, et chaque vente est recherchee AVEC store_id = req.store.id.
+
+// Filtre de date commun aux listes, statistiques et exports.
+function dateFilterFor(period) {
+  const now = new Date();
+  if (period === 'week') {
+    return { created_at: { [Op.gte]: new Date(now - 7 * 24 * 60 * 60 * 1000) } };
+  }
+  if (period === 'month') {
+    return { created_at: { [Op.gte]: new Date(now.getFullYear(), now.getMonth(), 1) } };
+  }
+  if (period === 'year') {
+    return { created_at: { [Op.gte]: new Date(now.getFullYear(), 0, 1) } };
+  }
+  return {};
+}
 
 exports.recordSale = async (req, res) => {
   try {
-    const { storeId, stockId, productName, quantity, price } = req.body;
+    const { stockId, productName, quantity, price } = req.body;
+
+    // L'article vendu doit appartenir au magasin du vendeur connecte.
+    const stock = await Stock.findOne({ where: { id: stockId, store_id: req.store.id } });
+    if (!stock) {
+      return res.status(404).json({
+        success: false,
+        message: 'Article non trouvé'
+      });
+    }
 
     const total = parseFloat(price) * parseInt(quantity);
 
     const sale = await Sale.create({
-      store_id: storeId,
-      stock_id: stockId,
+      store_id: req.store.id,
+      stock_id: stock.id,
       product_name: productName,
       quantity: parseInt(quantity),
       price: parseFloat(price),
@@ -17,12 +46,9 @@ exports.recordSale = async (req, res) => {
     });
 
     // Update stock
-    const stock = await Stock.findByPk(stockId);
-    if (stock) {
-      await stock.update({
-        quantity: stock.quantity - parseInt(quantity)
-      });
-    }
+    await stock.update({
+      quantity: stock.quantity - parseInt(quantity)
+    });
 
     res.status(201).json({
       success: true,
@@ -37,34 +63,15 @@ exports.recordSale = async (req, res) => {
   }
 };
 
-exports.getVendorSales = async (req, res) => {
+// Ventes du vendeur connecte
+exports.getMySales = async (req, res) => {
   try {
-    const { vendorId } = req.params;
     const { period = 'month' } = req.query;
-
-    const store = await Store.findOne({ where: { vendor_id: vendorId } });
-    if (!store) {
-      return res.status(404).json({
-        success: false,
-        message: 'Magasin non trouvé'
-      });
-    }
-
-    // Get date filter
-    let dateFilter = {};
-    const now = new Date();
-    if (period === 'week') {
-      dateFilter = { created_at: { [Op.gte]: new Date(now - 7 * 24 * 60 * 60 * 1000) } };
-    } else if (period === 'month') {
-      dateFilter = { created_at: { [Op.gte]: new Date(now.getFullYear(), now.getMonth(), 1) } };
-    } else if (period === 'year') {
-      dateFilter = { created_at: { [Op.gte]: new Date(now.getFullYear(), 0, 1) } };
-    }
 
     const sales = await Sale.findAll({
       where: {
-        store_id: store.id,
-        ...dateFilter
+        store_id: req.store.id,
+        ...dateFilterFor(period)
       },
       order: [['created_at', 'DESC']]
     });
@@ -74,7 +81,7 @@ exports.getVendorSales = async (req, res) => {
       sales
     });
   } catch (error) {
-    console.error('Get vendor sales error:', error);
+    console.error('Get my sales error:', error);
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la récupération des ventes'
@@ -82,61 +89,17 @@ exports.getVendorSales = async (req, res) => {
   }
 };
 
-exports.getStoreSales = async (req, res) => {
-  try {
-    const { storeId } = req.params;
-    const { period = 'month' } = req.query;
-
-    let dateFilter = {};
-    const now = new Date();
-    if (period === 'week') {
-      dateFilter = { created_at: { [Op.gte]: new Date(now - 7 * 24 * 60 * 60 * 1000) } };
-    } else if (period === 'month') {
-      dateFilter = { created_at: { [Op.gte]: new Date(now.getFullYear(), now.getMonth(), 1) } };
-    } else if (period === 'year') {
-      dateFilter = { created_at: { [Op.gte]: new Date(now.getFullYear(), 0, 1) } };
-    }
-
-    const sales = await Sale.findAll({
-      where: {
-        store_id: storeId,
-        ...dateFilter
-      },
-      order: [['created_at', 'DESC']]
-    });
-
-    res.json({
-      success: true,
-      sales
-    });
-  } catch (error) {
-    console.error('Get store sales error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erreur lors de la récupération des ventes'
-    });
-  }
-};
-
+// Ventes d'un article DU MAGASIN du vendeur connecte
 exports.getProductSales = async (req, res) => {
   try {
     const { productId } = req.params;
     const { period = 'month' } = req.query;
 
-    let dateFilter = {};
-    const now = new Date();
-    if (period === 'week') {
-      dateFilter = { created_at: { [Op.gte]: new Date(now - 7 * 24 * 60 * 60 * 1000) } };
-    } else if (period === 'month') {
-      dateFilter = { created_at: { [Op.gte]: new Date(now.getFullYear(), now.getMonth(), 1) } };
-    } else if (period === 'year') {
-      dateFilter = { created_at: { [Op.gte]: new Date(now.getFullYear(), 0, 1) } };
-    }
-
     const sales = await Sale.findAll({
       where: {
+        store_id: req.store.id,
         stock_id: productId,
-        ...dateFilter
+        ...dateFilterFor(period)
       },
       order: [['created_at', 'DESC']]
     });
@@ -159,7 +122,7 @@ exports.updateSale = async (req, res) => {
     const { id } = req.params;
     const { quantity, price } = req.body;
 
-    const sale = await Sale.findByPk(id);
+    const sale = await Sale.findOne({ where: { id, store_id: req.store.id } });
     if (!sale) {
       return res.status(404).json({
         success: false,
@@ -195,8 +158,8 @@ exports.updateSale = async (req, res) => {
 exports.deleteSale = async (req, res) => {
   try {
     const { id } = req.params;
-    
-    const sale = await Sale.findByPk(id);
+
+    const sale = await Sale.findOne({ where: { id, store_id: req.store.id } });
     if (!sale) {
       return res.status(404).json({
         success: false,
@@ -221,31 +184,12 @@ exports.deleteSale = async (req, res) => {
 
 exports.getSaleStats = async (req, res) => {
   try {
-    const { vendorId } = req.params;
     const { period = 'month' } = req.query;
-
-    const store = await Store.findOne({ where: { vendor_id: vendorId } });
-    if (!store) {
-      return res.status(404).json({
-        success: false,
-        message: 'Magasin non trouvé'
-      });
-    }
-
-    let dateFilter = {};
-    const now = new Date();
-    if (period === 'week') {
-      dateFilter = { created_at: { [Op.gte]: new Date(now - 7 * 24 * 60 * 60 * 1000) } };
-    } else if (period === 'month') {
-      dateFilter = { created_at: { [Op.gte]: new Date(now.getFullYear(), now.getMonth(), 1) } };
-    } else if (period === 'year') {
-      dateFilter = { created_at: { [Op.gte]: new Date(now.getFullYear(), 0, 1) } };
-    }
 
     const sales = await Sale.findAll({
       where: {
-        store_id: store.id,
-        ...dateFilter
+        store_id: req.store.id,
+        ...dateFilterFor(period)
       }
     });
 
@@ -273,39 +217,22 @@ exports.getSaleStats = async (req, res) => {
 
 exports.exportSales = async (req, res) => {
   try {
-    const { vendorId } = req.params;
     const { period = 'month' } = req.query;
-
-    const store = await Store.findOne({ where: { vendor_id: vendorId } });
-    if (!store) {
-      return res.status(404).json({
-        success: false,
-        message: 'Magasin non trouvé'
-      });
-    }
-
-    let dateFilter = {};
-    const now = new Date();
-    if (period === 'week') {
-      dateFilter = { created_at: { [Op.gte]: new Date(now - 7 * 24 * 60 * 60 * 1000) } };
-    } else if (period === 'month') {
-      dateFilter = { created_at: { [Op.gte]: new Date(now.getFullYear(), now.getMonth(), 1) } };
-    } else if (period === 'year') {
-      dateFilter = { created_at: { [Op.gte]: new Date(now.getFullYear(), 0, 1) } };
-    }
 
     const sales = await Sale.findAll({
       where: {
-        store_id: store.id,
-        ...dateFilter
+        store_id: req.store.id,
+        ...dateFilterFor(period)
       },
       order: [['created_at', 'DESC']]
     });
 
-    // Create CSV
+    // Create CSV. NB : avec `underscored: true`, l'attribut Sequelize
+    // s'appelle createdAt (la colonne SQL seule s'appelle created_at) ;
+    // l'ancien `s.created_at.toISOString()` levait donc une erreur.
     let csv = 'Date,Produit,Quantité,Prix,Total\n';
     sales.forEach(s => {
-      csv += `${s.created_at.toISOString().split('T')[0]},${s.product_name},${s.quantity},${s.price},${s.total}\n`;
+      csv += `${s.createdAt.toISOString().split('T')[0]},${s.product_name},${s.quantity},${s.price},${s.total}\n`;
     });
 
     res.setHeader('Content-Type', 'text/csv');

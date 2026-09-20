@@ -227,9 +227,22 @@ exports.sendToBuyer = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Acheteur non trouvé' });
     }
 
+    // Un vendeur ne peut que REPONDRE : il faut que cet acheteur ait deja
+    // ecrit a son magasin. Sans ce test, un vendeur pouvait envoyer des
+    // messages a n'importe quel acheteur de la plateforme (spam).
+    const buyerWroteFirst = await Message.count({
+      where: { store_id: store.id, buyer_id: buyer.id, sender_role: 'buyer' },
+    });
+    if (buyerWroteFirst === 0) {
+      return res.status(403).json({
+        success: false,
+        message: 'Vous ne pouvez répondre qu\'à un acheteur qui vous a écrit',
+      });
+    }
+
     const message = await Message.create({
       store_id: store.id,
-      buyer_id: buyerId,
+      buyer_id: buyer.id,
       sender_role: 'vendor',
       content: content.trim(),
     });
