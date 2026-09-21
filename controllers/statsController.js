@@ -1,4 +1,4 @@
-const { Sale, Order, Store, Publication, Follow, Stock, User, Department } = require('../models');
+const { Sale, Order, Store, Publication, Follow, Stock, User, Department, Vendor, sequelize } = require('../models');
 const { Op } = require('sequelize');
 
 exports.getVendorStats = async (req, res) => {
