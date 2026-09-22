@@ -3,6 +3,9 @@ const router = express.Router();
 const vendorController = require('../controllers/vendorController');
 const authMiddleware = require('../middlewares/authMiddleware');
 const { requireStore } = require('../middlewares/actorMiddleware');
+const storeServicesController = require('../controllers/storeServicesController');
+router.get('/store/services', authMiddleware, ...requireStore, storeServicesController.get);
+router.put('/store/services', authMiddleware, ...requireStore, storeServicesController.update);
 // ✅ IMPORT CORRECT AVEC LES CROCHETS
 const { upload, handleUploadError } = require('../middlewares/uploadMiddleware');
 

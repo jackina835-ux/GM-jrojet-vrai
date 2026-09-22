@@ -119,6 +119,9 @@ app.listen(PORT, () => {
   // Démarrer le job d'expiration
   startExpiryJob();
   ensureMessagesTable();
+  require('./utils/storeServicesTable')()
+    .then(() => console.log('Table store_services prete'))
+    .catch(() => console.error('Creation de store_services impossible'));
   // Creation additive uniquement : jamais de sync({ alter: true }) ni de force.
   // Si la base est indisponible, les routes de paiement echouent en 503.
   require('./models/StorePaymentAccount').sync()

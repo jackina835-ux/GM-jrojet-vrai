@@ -13,6 +13,9 @@ const OrderItem = require('./OrderItem');
 const Sale = require('./Sale');
 const Follow = require('./Follow');
 const Message = require('./Message');
+const StoreServices = require('./StoreServices');
+Store.hasOne(StoreServices, { foreignKey: 'store_id', as: 'services' });
+StoreServices.belongsTo(Store, { foreignKey: 'store_id' });
 
 // ============================================
 // ASSOCIATIONS
@@ -83,5 +86,6 @@ module.exports = {
     OrderItem,
     Sale,
     Follow,
-    Message
+    Message,
+    StoreServices
 };

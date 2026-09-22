@@ -1,11 +1,14 @@
-const { Store, Department, User, Follow, Vendor, Buyer } = require('../models');
+const { Store, Department, User, Follow, Vendor, Buyer, StoreServices } = require('../models');
+const ensureStoreServicesTable = require('../utils/storeServicesTable');
 const { Op } = require('sequelize');
 
 exports.getAllStores = async (req, res) => {
   try {
+    await ensureStoreServicesTable();
     const stores = await Store.findAll({
       where: { is_active: true },
       include: [
+        { model: StoreServices, as: 'services', required: false },
         { model: Department, as: 'department', attributes: ['id', 'name', 'icon'] },
         { 
           model: Vendor,
@@ -32,10 +35,12 @@ exports.getAllStores = async (req, res) => {
 
 exports.getStoreById = async (req, res) => {
   try {
+    await ensureStoreServicesTable();
     const { storeId } = req.params;
     
     const store = await Store.findByPk(storeId, {
       include: [
+        { model: StoreServices, as: 'services', required: false },
         { model: Department, as: 'department', attributes: ['id', 'name', 'icon'] },
         { 
           model: Vendor,
