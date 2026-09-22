@@ -60,6 +60,7 @@ app.use('/api/stores', storeRoutes);
 app.use('/api/stock', stockRoutes);
 app.use('/api/sales', salesRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/payments', require('./routes/paymentRoutes'));
 app.use('/api/stats', statsRoutes);
 app.use('/api/messages', messageRoutes);
 
@@ -118,6 +119,11 @@ app.listen(PORT, () => {
   // Démarrer le job d'expiration
   startExpiryJob();
   ensureMessagesTable();
+  // Creation additive uniquement : jamais de sync({ alter: true }) ni de force.
+  // Si la base est indisponible, les routes de paiement echouent en 503.
+  require('./models/StorePaymentAccount').sync()
+    .then(() => console.log('Table store_payment_accounts prete'))
+    .catch(() => console.error('Creation de store_payment_accounts impossible'));
 });
 
 module.exports = app;
